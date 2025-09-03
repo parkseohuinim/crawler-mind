@@ -1,26 +1,16 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { 
-  MenuManagerInfo, 
-  MenuLink,
-  MenuManagerInfoCreate,
-  MenuManagerInfoUpdate
-} from '../features/menu-links/types';
-import {
-  getAvailableMenuLinksForManager,
-  getMenuLinks
-} from '../features/menu-links/api/menuLinksApi';
-import { useMenuManagers } from '../features/menu-links/hooks';
-import MenuManagerForm from '../features/menu-links/components/MenuManagerForm';
-import MenuManagerTable from '../features/menu-links/components/MenuManagerTable';
-import Modal from '../features/menu-links/components/Modal';
-import SearchBar from '../features/menu-links/components/SearchBar';
-import Pagination from '../features/menu-links/components/Pagination';
+import { MenuManagerInfo, MenuManagerInfoCreate, MenuManagerInfoUpdate } from '@/app/domains/menuManagerInfo';
+import { MenuLink, menuLinkService } from '@/app/domains/menuLink';
+import { useMenuManagerInfos, MenuManagerInfoForm, MenuManagerInfoTable } from '@/app/features/menuManagerManagement';
+import Modal from '@/app/components/Modal';
+import SearchBar from '@/app/components/SearchBar';
+import Pagination from '@/app/components/Pagination';
 
 export default function MenuManagersPage() {
   const {
-    managerInfos,
+    menuManagerInfos,
     loading,
     error,
     totalPages,
@@ -28,14 +18,14 @@ export default function MenuManagersPage() {
     currentPage,
     pageSize,
     searchTerm,
-    createManagerInfo,
-    updateManagerInfo,
-    deleteManagerInfo,
-    searchManagerInfos,
+    createMenuManagerInfo,
+    updateMenuManagerInfo,
+    deleteMenuManagerInfo,
+    searchMenuManagerInfos,
     resetSearch,
     changePage,
     clearError,
-  } = useMenuManagers();
+  } = useMenuManagerInfos();
 
   const [availableMenuLinks, setAvailableMenuLinks] = useState<MenuLink[]>([]); // 담당자 배정 가능한 메뉴만
   const [allMenuLinks, setAllMenuLinks] = useState<MenuLink[]>([]); // 모든 메뉴 링크 (테이블 표시용)
@@ -43,25 +33,18 @@ export default function MenuManagersPage() {
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingManagerInfo, setEditingManagerInfo] = useState<MenuManagerInfo | undefined>(undefined);
+  const [editingMenuManagerInfo, setEditingMenuManagerInfo] = useState<MenuManagerInfo | undefined>(undefined);
 
   // Load menu links data
   const loadMenuLinksData = useCallback(async () => {
     try {
       const [allMenuResponse, availableMenuResponse] = await Promise.all([
-        getMenuLinks(1, 1000), // 모든 메뉴 링크 (테이블 표시용)
-        getAvailableMenuLinksForManager(1, 100) // 담당자 배정 가능한 메뉴만 (폼용)
+        menuLinkService.getMenuLinks(1, 1000), // 모든 메뉴 링크 (테이블 표시용)
+        menuLinkService.getAvailableMenuLinksForManager(1, 100) // 담당자 배정 가능한 메뉴만 (폼용)
       ]);
       
       setAvailableMenuLinks(availableMenuResponse?.items || []);
       setAllMenuLinks(allMenuResponse?.items || []);
-      
-      console.log('Menu links data loaded:', {
-        allMenuResponse,
-        availableMenuResponse,
-        allMenuLinksCount: allMenuResponse?.items?.length || 0,
-        availableMenuLinksCount: availableMenuResponse?.items?.length || 0
-      });
       
     } catch (err) {
       console.error('Error loading menu links:', err);
@@ -76,42 +59,48 @@ export default function MenuManagersPage() {
   // Handle create
   const handleCreate = useCallback(async (data: MenuManagerInfoCreate | MenuManagerInfoUpdate) => {
     if ('menu_id' in data) {
-      const success = await createManagerInfo(data as MenuManagerInfoCreate);
+      const success = await createMenuManagerInfo(data as MenuManagerInfoCreate);
       if (success) {
         setIsCreateModalOpen(false);
+        // Reload available menu links after creating a menu manager info
+        await loadMenuLinksData();
       }
     }
-  }, [createManagerInfo]);
+  }, [createMenuManagerInfo, loadMenuLinksData]);
 
   // Handle edit
-  const handleEdit = useCallback((managerInfo: MenuManagerInfo) => {
-    setEditingManagerInfo(managerInfo);
+  const handleEdit = useCallback((menuManagerInfo: MenuManagerInfo) => {
+    setEditingMenuManagerInfo(menuManagerInfo);
     setIsEditModalOpen(true);
   }, []);
 
   const handleUpdate = useCallback(async (data: MenuManagerInfoUpdate) => {
-    if (!editingManagerInfo) return;
+    if (!editingMenuManagerInfo) return;
     
-    const success = await updateManagerInfo(editingManagerInfo.id, data);
+    const success = await updateMenuManagerInfo(editingMenuManagerInfo.id, data);
     if (success) {
       setIsEditModalOpen(false);
-      setEditingManagerInfo(undefined);
+      setEditingMenuManagerInfo(undefined);
     }
-  }, [editingManagerInfo, updateManagerInfo]);
+  }, [editingMenuManagerInfo, updateMenuManagerInfo]);
 
   // Handle delete
-  const handleDelete = useCallback(async (managerInfo: MenuManagerInfo) => {
-    if (!confirm(`"${managerInfo.team_name}" 팀의 매니저 정보를 삭제하시겠습니까?`)) {
+  const handleDelete = useCallback(async (menuManagerInfo: MenuManagerInfo) => {
+    if (!confirm(`"${menuManagerInfo.team_name}" 팀의 매니저 정보를 삭제하시겠습니까?`)) {
       return;
     }
     
-    await deleteManagerInfo(managerInfo.id);
-  }, [deleteManagerInfo]);
+    const success = await deleteMenuManagerInfo(menuManagerInfo.id);
+    if (success) {
+      // Reload available menu links after deleting a menu manager info
+      await loadMenuLinksData();
+    }
+  }, [deleteMenuManagerInfo, loadMenuLinksData]);
 
   // Handle search
   const handleSearch = useCallback((searchTerm: string) => {
-    searchManagerInfos(searchTerm);
-  }, [searchManagerInfos]);
+    searchMenuManagerInfos(searchTerm);
+  }, [searchMenuManagerInfos]);
 
   // Handle reset
   const handleReset = useCallback(() => {
@@ -151,9 +140,9 @@ export default function MenuManagersPage() {
         </button>
       </div>
 
-      {/* Manager Info Table */}
-      <MenuManagerTable 
-        managerInfos={managerInfos}
+      {/* Menu Manager Info Table */}
+      <MenuManagerInfoTable 
+        menuManagerInfos={menuManagerInfos}
         menuLinks={allMenuLinks || []}
         loading={loading}
         onEdit={handleEdit}
@@ -174,7 +163,7 @@ export default function MenuManagersPage() {
         onClose={() => setIsCreateModalOpen(false)}
         title="새 매니저 정보 생성"
       >
-        <MenuManagerForm
+        <MenuManagerInfoForm
           menuLinks={availableMenuLinks} // 배정되지 않은 메뉴만 전달
           onSubmit={handleCreate}
           onCancel={() => setIsCreateModalOpen(false)}
@@ -188,17 +177,17 @@ export default function MenuManagersPage() {
         isOpen={isEditModalOpen}
         onClose={() => {
           setIsEditModalOpen(false);
-          setEditingManagerInfo(undefined);
+          setEditingMenuManagerInfo(undefined);
         }}
         title="매니저 정보 수정"
       >
-        <MenuManagerForm
+        <MenuManagerInfoForm
           menuLinks={allMenuLinks || []} // 수정 시에는 모든 메뉴 전달 (현재 메뉴 포함)
-          managerInfo={editingManagerInfo}
+          menuManagerInfo={editingMenuManagerInfo}
           onSubmit={handleUpdate}
           onCancel={() => {
             setIsEditModalOpen(false);
-            setEditingManagerInfo(undefined);
+            setEditingMenuManagerInfo(undefined);
           }}
           loading={loading}
           isEdit={true}

@@ -1,17 +1,11 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { 
-  useMenuLinks, 
-  MenuLink, 
-  MenuLinkCreate, 
-  MenuLinkUpdate,
-  MenuLinkForm,
-  MenuLinkTable,
-  SearchBar,
-  Pagination,
-  Modal
-} from '../features/menu-links';
+import { MenuLink, MenuLinkCreate, MenuLinkUpdate } from '@/app/domains/menuLink';
+import { useMenuLinks, MenuLinkForm, MenuLinkTable } from '@/app/features/menuManagement';
+import Modal from '@/app/components/Modal';
+import SearchBar from '@/app/components/SearchBar';
+import Pagination from '@/app/components/Pagination';
 
 export default function MenuLinksPage() {
   const {
@@ -89,9 +83,6 @@ export default function MenuLinksPage() {
   const handleReset = useCallback(() => {
     resetSearch();
   }, [resetSearch]);
-
-  // 디버깅을 위한 로그
-  console.log('SearchBar props in page:', { searchTerm, hasSearchTerm: !!searchTerm });
 
   return (
     <div className="menu-links-page">

@@ -1,77 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { menuLinkService } from '@/app/domains/menuLink';
 
-const API_BASE_URL = process.env.MCP_API_URL || 'http://localhost:8000';
+// 임시로 하드코딩 (환경 변수 문제 해결 후 제거)
+const API_BASE_URL = 'http://localhost:8000';
 
-// GET /api/menu-links/[menuLinkId]
+// GET /api/menu-manager-info/[id]
 export async function GET(
   request: NextRequest,
-  { params }: { params: { menuLinkId: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
-    console.log('=== Menu Link [menuLinkId] API Route Debug ===');
+    console.log('=== Menu Manager Info [id] API Route Debug ===');
     console.log('Request URL:', request.url);
-    console.log('Request pathname:', new URL(request.url).pathname);
-    console.log('Params menuLinkId:', params.menuLinkId);
-    console.log('menuLinkId type:', typeof params.menuLinkId);
-    console.log('menuLinkId isNaN:', isNaN(Number(params.menuLinkId)));
-    console.log('menuLinkId parsed as number:', Number(params.menuLinkId));
-    console.log('Request headers:', Object.fromEntries(request.headers.entries()));
-    console.log('Request method:', request.method);
-    console.log('Request referer:', request.headers.get('referer'));
-    console.log('User agent:', request.headers.get('user-agent'));
-    console.log('Request timestamp:', new Date().toISOString());
+    console.log('Params id:', params.id);
     
-    // 강력한 ID 유효성 검사
-    const id = params.menuLinkId.trim();
+    // ID 유효성 검사
+    const id = params.id.trim();
     
-    // 빈 문자열 체크
     if (!id) {
-      console.error('Empty menuLinkId provided');
+      console.error('Empty menu manager info ID provided');
       return NextResponse.json(
-        { error: 'Menu link ID is required' },
+        { error: 'Menu Manager Info ID is required' },
         { status: 400 }
       );
     }
     
-    // 숫자가 아닌 경우 체크
     if (isNaN(Number(id))) {
-      console.error('Invalid menuLinkId provided (not a number):', id);
-      console.error('This suggests a routing issue - static routes should not match [menuLinkId]');
+      console.error('Invalid menu manager info ID provided (not a number):', id);
       return NextResponse.json(
-        { error: `Invalid menu_link_id: ${id}. ID must be a number.` },
+        { error: `Invalid menu_manager_info_id: ${id}. ID must be a number.` },
         { status: 400 }
       );
     }
     
-    // 음수 체크
     const numericId = Number(id);
     if (numericId <= 0) {
-      console.error('Invalid menuLinkId provided (negative or zero):', numericId);
+      console.error('Invalid menu manager info ID provided (negative or zero):', numericId);
       return NextResponse.json(
-        { error: `Invalid menu_link_id: ${numericId}. ID must be a positive number.` },
+        { error: `Invalid menu_manager_info_id: ${numericId}. ID must be a positive number.` },
         { status: 400 }
       );
     }
     
-    // 정수 체크
     if (!Number.isInteger(numericId)) {
-      console.error('Invalid menuLinkId provided (not an integer):', numericId);
+      console.error('Invalid menu manager info ID provided (not an integer):', numericId);
       return NextResponse.json(
-        { error: `Invalid menu_link_id: ${numericId}. ID must be an integer.` },
+        { error: `Invalid menu_manager_info_id: ${numericId}. ID must be an integer.` },
         { status: 400 }
       );
     }
     
-    console.log('menuLinkId validation passed:', numericId);
+    console.log('Menu Manager Info ID validation passed:', numericId);
     
-    const apiUrl = `${API_BASE_URL}/api/menu-links/${numericId}`;
+    // 백엔드 API 호출 (기존 manager-info 엔드포인트 사용)
+    const apiUrl = `${API_BASE_URL}/api/menu-links/manager-info/${numericId}`;
     console.log('Calling backend API:', apiUrl);
-    console.log('Environment variables:', {
-      MCP_API_URL: process.env.MCP_API_URL,
-      NODE_ENV: process.env.NODE_ENV,
-      API_BASE_URL
-    });
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -82,24 +64,14 @@ export async function GET(
     });
     
     console.log('Backend response status:', response.status);
-    console.log('Backend response headers:', Object.fromEntries(response.headers.entries()));
     
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Backend API error:', response.status, errorText);
-      console.error('Backend error details:', {
-        status: response.status,
-        statusText: response.statusText,
-        url: apiUrl,
-        id: numericId,
-        idType: typeof numericId,
-        originalId: params.menuLinkId
-      });
       
-      // 백엔드 에러를 프론트엔드에 전달
       if (response.status === 404) {
         return NextResponse.json(
-          { error: 'Menu link not found' },
+          { error: 'Menu Manager Info not found' },
           { status: 404 }
         );
       }
@@ -115,7 +87,7 @@ export async function GET(
     }
 
     const data = await response.json();
-    console.log('Successfully fetched menu link data');
+    console.log('Successfully fetched menu manager info data');
     return NextResponse.json(data);
   } catch (error) {
     console.error('=== Error Details ===');
@@ -125,7 +97,7 @@ export async function GET(
     
     return NextResponse.json(
       { 
-        error: 'Failed to fetch menu link', 
+        error: 'Failed to fetch menu manager info', 
         details: error instanceof Error ? error.message : String(error)
       },
       { status: 500 }
@@ -133,18 +105,18 @@ export async function GET(
   }
 }
 
-// PUT /api/menu-links/[menuLinkId]
+// PUT /api/menu-manager-info/[id]
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { menuLinkId: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
     // ID 유효성 검사
-    const id = params.menuLinkId.trim();
+    const id = params.id.trim();
     
     if (!id || isNaN(Number(id)) || Number(id) <= 0 || !Number.isInteger(Number(id))) {
       return NextResponse.json(
-        { error: `Invalid menu_link_id: ${id}. ID must be a positive integer.` },
+        { error: `Invalid menu_manager_info_id: ${id}. ID must be a positive integer.` },
         { status: 400 }
       );
     }
@@ -152,7 +124,8 @@ export async function PUT(
     const numericId = Number(id);
     const body = await request.json();
     
-    const response = await fetch(`${API_BASE_URL}/api/menu-links/${numericId}`, {
+    // 백엔드 API 호출 (기존 manager-info-update 엔드포인트 사용)
+    const response = await fetch(`${API_BASE_URL}/api/menu-links/manager-info-update/${numericId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -166,7 +139,7 @@ export async function PUT(
       
       if (response.status === 404) {
         return NextResponse.json(
-          { error: 'Menu link not found' },
+          { error: 'Menu Manager Info not found' },
           { status: 404 }
         );
       }
@@ -184,32 +157,34 @@ export async function PUT(
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error updating menu link:', error);
+    console.error('Error updating menu manager info:', error);
     return NextResponse.json(
-      { error: 'Failed to update menu link' },
+      { error: 'Failed to update menu manager info' },
       { status: 500 }
     );
   }
 }
 
-// DELETE /api/menu-links/[menuLinkId]
+// DELETE /api/menu-manager-info/[id]
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { menuLinkId: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
     // ID 유효성 검사
-    const id = params.menuLinkId.trim();
+    const id = params.id.trim();
     
     if (!id || isNaN(Number(id)) || Number(id) <= 0 || !Number.isInteger(Number(id))) {
       return NextResponse.json(
-        { error: `Invalid menu_link_id: ${id}. ID must be a positive integer.` },
+        { error: `Invalid menu_manager_info_id: ${id}. ID must be a positive integer.` },
         { status: 400 }
       );
     }
     
     const numericId = Number(id);
-    const response = await fetch(`${API_BASE_URL}/api/menu-links/${numericId}`, {
+    
+    // 백엔드 API 호출 (기존 manager-info-delete 엔드포인트 사용)
+    const response = await fetch(`${API_BASE_URL}/api/menu-links/manager-info-delete/${numericId}`, {
       method: 'DELETE',
     });
 
@@ -219,7 +194,7 @@ export async function DELETE(
       
       if (response.status === 404) {
         return NextResponse.json(
-          { error: 'Menu link not found' },
+          { error: 'Menu Manager Info not found' },
           { status: 404 }
         );
       }
@@ -230,9 +205,9 @@ export async function DELETE(
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error deleting menu link:', error);
+    console.error('Error deleting menu manager info:', error);
     return NextResponse.json(
-      { error: 'Failed to delete menu link' },
+      { error: 'Failed to delete menu manager info' },
       { status: 500 }
     );
   }

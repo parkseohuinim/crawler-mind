@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { menuLinkService } from '@/app/domains/menuLink';
+import { menuManagerInfoService } from '@/app/domains/menuManagerInfo';
 
 // 임시로 하드코딩 (환경 변수 문제 해결 후 제거)
 const API_BASE_URL = 'http://localhost:8000';
 
-// GET /api/menu-links
+// GET /api/menu-manager-info
 export async function GET(request: NextRequest) {
   try {
-    console.log('=== Menu Links API Route Debug ===');
+    console.log('=== Menu Manager Info API Route Debug ===');
     console.log('Environment variables:', {
       MCP_API_URL: process.env.MCP_API_URL,
       NODE_ENV: process.env.NODE_ENV,
@@ -15,27 +15,25 @@ export async function GET(request: NextRequest) {
     });
     
     const { searchParams } = new URL(request.url);
-    const page = searchParams.get('page') || '1';
-    const size = searchParams.get('size') || '10';
-    const search = searchParams.get('search') || '';
+    const page = parseInt(searchParams.get('page') || '1');
+    const size = parseInt(searchParams.get('size') || '10');
+    const search = searchParams.get('search') || undefined;
 
+    console.log('Request params:', { page, size, search });
+
+    // 백엔드 API 호출 (기존 manager-info-list 엔드포인트 사용)
     const params = new URLSearchParams({
-      page,
-      size,
+      page: page.toString(),
+      size: size.toString(),
     });
 
     if (search) {
       params.append('search', search);
     }
 
-    const fullUrl = `${API_BASE_URL}/api/menu-links?${params}`;
+    const fullUrl = `${API_BASE_URL}/api/menu-links/manager-info-list?${params}`;
     console.log('Calling API:', fullUrl);
-    console.log('Request URL:', request.url);
-    console.log('Search params:', Object.fromEntries(searchParams.entries()));
 
-    // 백엔드 서버 연결 테스트
-    console.log('Testing backend connection...');
-    
     const response = await fetch(fullUrl, {
       method: 'GET',
       headers: {
@@ -45,7 +43,6 @@ export async function GET(request: NextRequest) {
     });
     
     console.log('Response status:', response.status);
-    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -77,7 +74,7 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json(
       { 
-        error: 'Failed to fetch menu links', 
+        error: 'Failed to fetch menu manager info', 
         details: error instanceof Error ? error.message : String(error),
         type: error instanceof Error ? error.constructor.name : typeof error
       },
@@ -86,12 +83,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/menu-links
+// POST /api/menu-manager-info
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     
-    const response = await fetch(`${API_BASE_URL}/api/menu-links`, {
+    // 백엔드 API 호출 (기존 manager-info-create 엔드포인트 사용)
+    const response = await fetch(`${API_BASE_URL}/api/menu-links/manager-info-create`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -100,15 +98,25 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      console.error('Backend API error:', response.status, errorText);
+      
+      if (response.status === 422) {
+        return NextResponse.json(
+          { error: 'Invalid request data', details: errorText },
+          { status: 422 }
+        );
+      }
+      
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
     }
 
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error creating menu link:', error);
+    console.error('Error creating menu manager info:', error);
     return NextResponse.json(
-      { error: 'Failed to create menu link' },
+      { error: 'Failed to create menu manager info' },
       { status: 500 }
     );
   }
