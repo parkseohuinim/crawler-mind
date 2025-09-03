@@ -12,6 +12,12 @@ import re
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 불필요한 디버그 로그 숨기기
+logging.getLogger("mcp.server").setLevel(logging.INFO)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("sse_starlette").setLevel(logging.WARNING)
+logging.getLogger("mcp.server.lowlevel").setLevel(logging.WARNING)
+
 mcp = FastMCP(name="CrawlerMindServer")
 
 @mcp.tool
@@ -20,6 +26,7 @@ async def crawl_webpage(url: str) -> Dict[str, Any]:
     Playwright를 사용하여 웹페이지를 크롤링합니다.
     페이지 로드, HTML 추출, 기본 메타데이터를 수집합니다.
     """
+    logger.info(f"[MCP] crawl_webpage called for URL: {url}")
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -44,7 +51,7 @@ async def crawl_webpage(url: str) -> Dict[str, Any]:
             
             await browser.close()
             
-            return {
+            result = {
                 "success": True,
                 "url": url,
                 "title": title,
@@ -52,6 +59,8 @@ async def crawl_webpage(url: str) -> Dict[str, Any]:
                 "meta_description": meta_description,
                 "content_length": len(html_content)
             }
+            logger.info(f"[MCP] crawl_webpage completed: {len(html_content)} chars, title: '{title}'")
+            return result
             
     except Exception as e:
         logger.error(f"크롤링 실패 {url}: {str(e)}")
@@ -67,6 +76,7 @@ def extract_text_content(html_content: str) -> Dict[str, Any]:
     HTML 콘텐츠에서 텍스트만 추출합니다.
     태그를 제거하고 읽기 가능한 텍스트만 반환합니다.
     """
+    logger.info(f"[MCP] extract_text_content called with {len(html_content)} chars")
     try:
         from bs4 import BeautifulSoup
         
@@ -84,12 +94,14 @@ def extract_text_content(html_content: str) -> Dict[str, Any]:
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         text = ' '.join(chunk for chunk in chunks if chunk)
         
-        return {
+        result = {
             "success": True,
             "text_content": text,
             "text_length": len(text),
             "word_count": len(text.split())
         }
+        logger.info(f"[MCP] extract_text_content completed: {len(text)} chars, {len(text.split())} words")
+        return result
         
     except Exception as e:
         logger.error(f"텍스트 추출 실패: {str(e)}")
@@ -104,6 +116,7 @@ def extract_links(html_content: str, base_url: str) -> Dict[str, Any]:
     HTML 콘텐츠에서 모든 링크를 추출합니다.
     상대 링크는 절대 링크로 변환합니다.
     """
+    logger.info(f"[MCP] extract_links called with {len(html_content)} chars, base_url: {base_url}")
     try:
         from bs4 import BeautifulSoup
         
@@ -131,13 +144,15 @@ def extract_links(html_content: str, base_url: str) -> Dict[str, Any]:
                 unique_links.append(link)
                 seen_urls.add(link["url"])
         
-        return {
+        result = {
             "success": True,
             "links": unique_links,
             "total_links": len(unique_links),
             "internal_links": len([l for l in unique_links if not l["is_external"]]),
             "external_links": len([l for l in unique_links if l["is_external"]])
         }
+        logger.info(f"[MCP] extract_links completed: {len(unique_links)} links found")
+        return result
         
     except Exception as e:
         logger.error(f"링크 추출 실패: {str(e)}")
@@ -152,6 +167,7 @@ async def take_screenshot(url: str) -> Dict[str, Any]:
     웹페이지의 스크린샷을 촬영합니다.
     Base64 인코딩된 이미지를 반환합니다.
     """
+    logger.info(f"[MCP] take_screenshot called for URL: {url}")
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -170,13 +186,15 @@ async def take_screenshot(url: str) -> Dict[str, Any]:
             
             await browser.close()
             
-            return {
+            result = {
                 "success": True,
                 "url": url,
                 "screenshot": screenshot_base64,
                 "format": "png",
                 "size_bytes": len(screenshot_bytes)
             }
+            logger.info(f"[MCP] take_screenshot completed: {len(screenshot_bytes)} bytes, {len(screenshot_base64)} chars")
+            return result
             
     except Exception as e:
         logger.error(f"스크린샷 촬영 실패 {url}: {str(e)}")

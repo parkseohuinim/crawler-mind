@@ -1,34 +1,38 @@
 """Database configuration and connection management"""
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, BigInteger, Text, String, DateTime, func
 from typing import AsyncGenerator
 from app.config import settings
 
-# Create async engine
-engine = create_async_engine(
-    settings.database_url,
-    echo=False,  # Set to True for SQL debugging
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
-)
+# Global variables for lazy initialization
+engine = None
+AsyncSessionLocal = None
 
-# Create async session factory
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
+def _initialize_database_engine():
+    """Initialize database engine and session factory"""
+    global engine, AsyncSessionLocal
+    if engine is None:
+        engine = create_async_engine(
+            settings.database_url,
+            echo=False,  # Set to True for SQL debugging
+            pool_size=10,
+            max_overflow=20,
+            pool_pre_ping=True,
+        )
+        
+        AsyncSessionLocal = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False
+        )
 
 class Base(DeclarativeBase):
     """Base class for all database models"""
     pass
 
-
-
 async def get_database_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session"""
+    _initialize_database_engine()
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -37,8 +41,11 @@ async def get_database_session() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_database():
     """Initialize database tables"""
+    _initialize_database_engine()
+    
     # Import all models to ensure they're registered with Base
-    from app.menu_links.database import MenuLink, MenuManagerInfo
+    from app.domains.menu.entities.menu_link import MenuLink
+    from app.domains.menu.entities.menu_manager import MenuManagerInfo
     
     async with engine.begin() as conn:
         # Create tables if they don't exist
@@ -46,4 +53,5 @@ async def init_database():
 
 async def close_database():
     """Close database connections"""
-    await engine.dispose()
+    if engine is not None:
+        await engine.dispose()

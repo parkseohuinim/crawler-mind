@@ -1,4 +1,4 @@
-"""Main application entry point"""
+"""Main application entry point - DDD Architecture"""
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,10 +6,10 @@ import logging
 
 from app.config import settings
 from app.core.logging import setup_logging
-from app.services.mcp_service import mcp_service
-from app.routers.api import router
-from app.menu_links.router import router as menu_links_router
-from app.database import init_database, close_database
+from app.infrastructure.mcp.mcp_service import mcp_service
+from app.routers.api import router as api_router
+from app.presentation.api.menu.menu_router import router as menu_router
+from app.shared.database.base import init_database, close_database
 
 # Setup logging
 setup_logging()
@@ -19,7 +19,7 @@ logger = logging.getLogger("app.main")
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     # Startup
-    logger.info("Starting MCP FastAPI Server...")
+    logger.info("Starting MCP FastAPI Server with DDD Architecture...")
     try:
         # Initialize database
         await init_database()
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title=settings.app_title,
+    title=f"{settings.app_title} - DDD",
     version=settings.app_version,
     lifespan=lifespan,
     debug=settings.debug
@@ -62,8 +62,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(router)
-app.include_router(menu_links_router)
+app.include_router(api_router, prefix="/api")  # Keep existing API for backward compatibility
+app.include_router(menu_router)  # New DDD-based menu API
 
 # Development server
 if __name__ == "__main__":

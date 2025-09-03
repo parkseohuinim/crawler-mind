@@ -408,15 +408,30 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
     setIsDragging(false);
   }, []);
 
-  // Zoom with mouse wheel
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
+  // Zoom with mouse wheel - using native event listener to avoid passive issues
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Only zoom when Ctrl/Cmd is held, otherwise allow normal scrolling
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        
+        const zoomFactor = 0.1;
+        const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
+        const newZoom = Math.min(Math.max(zoomLevel + delta, 0.1), 10);
+        
+        setZoomLevel(newZoom);
+      }
+    };
+
+    // Add non-passive event listener
+    container.addEventListener('wheel', handleWheel, { passive: false });
     
-    const zoomFactor = 0.1;
-    const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-    const newZoom = Math.min(Math.max(zoomLevel + delta, 0.1), 10); // Allow up to 1000% zoom for large datasets
-    
-    setZoomLevel(newZoom);
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
   }, [zoomLevel]);
 
   // Auto-adjust zoom level based on node count
@@ -441,8 +456,9 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
             </div>
           </div>
         </div>
-        <div className="chart-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '400px' }}>
-          <div>트리 구조를 로딩하고 있습니다...</div>
+        <div className="loading-container" style={{ height: '400px' }}>
+          <div className="spinner-large"></div>
+          <span className="loading-text">트리 구조를 로딩하고 있습니다...</span>
         </div>
       </div>
     );
@@ -453,6 +469,9 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
       <div className="chart-header">
         <div className="chart-title-section">
           <h3>메뉴 구조 트리 차트</h3>
+          <div style={{ fontSize: '0.75rem', color: '#718096', marginTop: '0.25rem' }}>
+            Ctrl/Cmd + 마우스 휠로 확대/축소 가능
+          </div>
 
           <div className="zoom-controls">
             <button 
@@ -500,7 +519,6 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
       >
         <svg 

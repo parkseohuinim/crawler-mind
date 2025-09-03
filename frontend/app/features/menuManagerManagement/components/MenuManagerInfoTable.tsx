@@ -25,9 +25,9 @@ export default function MenuManagerInfoTable({
 
   if (loading) {
     return (
-      <div className="loading-spinner">
-        <div className="spinner"></div>
-        <span>로딩 중...</span>
+      <div className="loading-container">
+        <div className="spinner-large"></div>
+        <span className="loading-text">메뉴 매니저 정보를 불러오는 중...</span>
       </div>
     );
   }

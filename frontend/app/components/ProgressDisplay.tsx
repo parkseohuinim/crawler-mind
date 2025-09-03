@@ -12,7 +12,13 @@ export default function ProgressDisplay({ steps }: ProgressDisplayProps) {
       case 'completed':
         return '✅';
       case 'active':
-        return <div className="loading-spinner" />;
+        return (
+          <div className="dots-spinner">
+            <div className="dot"></div>
+            <div className="dot"></div>
+            <div className="dot"></div>
+          </div>
+        );
       case 'error':
         return '❌';
       default:

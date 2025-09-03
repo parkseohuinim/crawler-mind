@@ -29,9 +29,9 @@ export default function MenuTreePage() {
         {/* Tree View */}
         <div className="tree-section">
           {loading ? (
-            <div className="loading-spinner">
-              <div className="spinner"></div>
-              <span>트리 데이터 로딩 중...</span>
+            <div className="loading-container" style={{ minHeight: '60vh' }}>
+              <div className="spinner-large"></div>
+              <span className="loading-text">메뉴 트리 데이터를 불러오는 중...</span>
             </div>
           ) : (
             <MenuTreeView menuLinks={menuLinks} />

@@ -1,0 +1,1 @@
+"""Crawler domain entities"""

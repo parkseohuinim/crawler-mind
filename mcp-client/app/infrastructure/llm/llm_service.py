@@ -4,8 +4,8 @@ import json
 import logging
 from openai import AsyncOpenAI
 from app.config import settings
-from app.services.mcp_service import mcp_service
-from app.utils.exceptions import LLMQueryError
+from app.infrastructure.mcp.mcp_service import mcp_service
+from app.shared.exceptions.base import LLMQueryError
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class LLMService:
                     stream = await self._client.responses.create(
                         model=settings.openai_model,
                         input=[
-                            {"role": "system", "content": "You are a web analysis assistant. When given a task, you MUST use ALL available tools as requested. Do not skip any tools."},
+                            {"role": "system", "content": "You are a web analysis assistant. You MUST use ALL tools that are explicitly mentioned in the user's request. Complete each step in the exact order specified. Do not stop until you have used every requested tool. If a tool fails, still continue with the remaining tools."},
                             {"role": "user", "content": question}
                         ],
                         tools=available_tools,
@@ -157,11 +157,51 @@ class LLMService:
 
             # 호출 자체를 메시지 배열에 추가
             next_input.append(call)
+            # 대용량 데이터 도구들은 LLM에 요약된 정보만 전달
+            if call.name == 'take_screenshot':
+                result_str = str({
+                    "success": True,
+                    "message": "스크린샷이 성공적으로 촬영되었습니다",
+                    "screenshot_captured": True
+                })
+                logger.info(f"Screenshot tool result simplified for LLM: original {len(str(result)):,} chars -> {len(result_str)} chars")
+            elif call.name == 'crawl_webpage':
+                # HTML 전체 대신 메타 정보만 전달
+                try:
+                    original_result = result.structured_content if hasattr(result, 'structured_content') else result.data
+                    result_str = str({
+                        "success": original_result.get("success", True),
+                        "url": original_result.get("url", ""),
+                        "title": original_result.get("title", ""),
+                        "meta_description": original_result.get("meta_description", ""),
+                        "content_length": original_result.get("content_length", 0),
+                        "message": "웹페이지 크롤링이 완료되었습니다 (HTML 데이터는 LLM 분석에 불필요하므로 생략)"
+                    })
+                    logger.info(f"Crawl webpage result simplified for LLM: original {len(str(result)):,} chars -> {len(result_str)} chars")
+                except Exception as e:
+                    logger.warning(f"Failed to simplify crawl result: {e}")
+                    result_str = str(result)  # 실패시 원본 사용
+            else:
+                # 다른 도구들의 결과 데이터 크기 제한 (OpenAI API 제한: 10MB)
+                result_str = str(result)
+                max_output_size = 8 * 1024 * 1024  # 8MB로 안전하게 제한
+                
+                if len(result_str) > max_output_size:
+                    # 대용량 데이터는 요약해서 전달
+                    truncated_result = {
+                        "success": True,
+                        "message": f"결과가 너무 커서 요약됨 (원본 크기: {len(result_str):,} 문자)",
+                        "truncated": True,
+                        "sample": result_str[:1000] + "..." if len(result_str) > 1000 else result_str
+                    }
+                    result_str = str(truncated_result)
+                    logger.warning(f"Tool result truncated for {call.name}: {len(str(result)):,} -> {len(result_str):,} chars")
+            
             # 실행 결과를 function_call_output 형식으로 추가
             next_input.append({
                 "type": "function_call_output",
                 "call_id": call.call_id,
-                "output": str(result),
+                "output": result_str,
             })
         
         return next_input
@@ -193,7 +233,7 @@ class LLMService:
                 args = json.loads(call['arguments']) if call['arguments'] else {}
                 result = await mcp_service.call_tool(call['name'], args)
                 
-                # Tool 실행 결과를 스트림으로 전송
+                # Tool 실행 결과를 스트림으로 전송 (원본 결과 전달)
                 tool_message = f"Tool '{call['name']}' 실행 완료"
                 yield {'type': 'tool_result', 'data': {'tool_name': call['name'], 'message': tool_message, 'result': result}}
                 
@@ -204,10 +244,50 @@ class LLMService:
                     "name": call['name'],
                     "arguments": call['arguments']
                 })
+                                # 대용량 데이터 도구들은 LLM에 요약된 정보만 전달
+                if call['name'] == 'take_screenshot':
+                    result_str = str({
+                        "success": True,
+                        "message": "스크린샷이 성공적으로 촬영되었습니다",
+                        "screenshot_captured": True
+                    })
+                    logger.info(f"Screenshot tool result simplified for LLM: original {len(str(result)):,} chars -> {len(result_str)} chars")
+                elif call['name'] == 'crawl_webpage':
+                    # HTML 전체 대신 메타 정보만 전달
+                    try:
+                        original_result = result.structured_content if hasattr(result, 'structured_content') else result.data
+                        result_str = str({
+                            "success": original_result.get("success", True),
+                            "url": original_result.get("url", ""),
+                            "title": original_result.get("title", ""),
+                            "meta_description": original_result.get("meta_description", ""),
+                            "content_length": original_result.get("content_length", 0),
+                            "message": "웹페이지 크롤링이 완료되었습니다 (HTML 데이터는 LLM 분석에 불필요하므로 생략)"
+                        })
+                        logger.info(f"Crawl webpage result simplified for LLM: original {len(str(result)):,} chars -> {len(result_str)} chars")
+                    except Exception as e:
+                        logger.warning(f"Failed to simplify crawl result: {e}")
+                        result_str = str(result)  # 실패시 원본 사용
+                else:
+                    # 다른 도구들의 결과 데이터 크기 제한 (OpenAI API 제한: 10MB)
+                    result_str = str(result)
+                    max_output_size = 8 * 1024 * 1024  # 8MB로 안전하게 제한
+                    
+                    if len(result_str) > max_output_size:
+                        # 대용량 데이터는 요약해서 전달
+                        truncated_result = {
+                            "success": True,
+                            "message": f"결과가 너무 커서 요약됨 (원본 크기: {len(result_str):,} 문자)",
+                            "truncated": True,
+                            "sample": result_str[:1000] + "..." if len(result_str) > 1000 else result_str
+                        }
+                        result_str = str(truncated_result)
+                        logger.warning(f"Tool result truncated for {call['name']}: {len(str(result)):,} -> {len(result_str):,} chars")
+                
                 next_input.append({
                     "type": "function_call_output", 
                     "call_id": call['id'],
-                    "output": str(result)
+                    "output": result_str
                 })
                 
             except Exception as tool_error:

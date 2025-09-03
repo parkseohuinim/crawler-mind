@@ -4,7 +4,7 @@ import asyncio
 import logging
 from fastmcp import Client
 from app.config import settings
-from app.utils.exceptions import MCPConnectionError, MCPToolExecutionError
+from app.shared.exceptions.base import MCPConnectionError, MCPToolExecutionError
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class MCPService:
             raise MCPConnectionError("MCP client not initialized")
             
         try:
-            from app.utils.schema_converter import to_openai_schema
+            from app.shared.utils.schema_converter import to_openai_schema
             
             mcp_tools = await self._client.list_tools()
             self._tools_cache = [to_openai_schema(tool) for tool in mcp_tools]
