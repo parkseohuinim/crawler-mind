@@ -65,3 +65,4 @@ class TaskResult(BaseModel):
     error: Optional[str] = Field(None, description="Error message if failed")
     createdAt: str = Field(..., description="Task creation timestamp")
     completedAt: Optional[str] = Field(None, description="Task completion timestamp")
+

@@ -1,7 +1,8 @@
 """API routes for MCP Client"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import logging
+import math
 
 from app.models import (
     QueryRequest, QueryResponse, ToolsResponse, HealthResponse,
@@ -11,11 +12,15 @@ from app.services.mcp_service import mcp_service
 from app.services.llm_service import llm_service
 from app.services.task_service import task_service
 from app.utils.exceptions import MCPConnectionError, LLMQueryError
+from app.menu_links.router import router as menu_links_router
 
 logger = logging.getLogger(__name__)
 
 # Create API router
 router = APIRouter()
+
+# Include menu links router
+router.include_router(menu_links_router, prefix="/api")
 
 @router.get("/", tags=["root"])
 async def root():
@@ -210,3 +215,4 @@ async def get_task_result(task_id: str):
     except Exception as e:
         logger.error(f"Failed to get task result {task_id}: {e}")
         raise HTTPException(status_code=500, detail=f"결과 조회 중 오류: {str(e)}")
+

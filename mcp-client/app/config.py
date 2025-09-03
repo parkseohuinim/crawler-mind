@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_timeout: int = 60
     
+    # Database Configuration
+    database_url: str = "postgresql+asyncpg://user:password@localhost:5432/crawler_mind"
+    
     # Application Configuration
     app_title: str = "MCP FastAPI Server"
     app_version: str = "1.0.0"

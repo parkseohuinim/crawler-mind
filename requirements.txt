@@ -1,44 +1,30 @@
 # Core MCP Framework
 fastmcp>=2.0.0
 
-# FastAPI Server & Dependencies
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-pydantic-core==2.14.1
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-python-multipart==0.0.6
+# Core FastAPI & Server
+fastapi>=0.105.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0,<3.0.0
+pydantic-settings>=2.1.0,<3.0.0
+python-dotenv>=1.0.0
+
+# Database
+asyncpg>=0.29.0
+sqlalchemy>=2.0.20,<2.1.0
+alembic>=1.13.0
 
 # HTTP & Async
-httpx==0.25.2
-httpcore
-httpx-sse==0.4.0
-httptools==0.6.4
-aiofiles==24.1.0
-asyncer==0.0.8
-
-# Web Scraping & Crawling
-playwright==1.53.0
-beautifulsoup4==4.12.2
-selenium==4.33.0
-lxml==4.9.3
+httpx>=0.25.0
+aiofiles>=23.0.0
 
 # AI & LLM
-openai==1.82.0
-anthropic==0.53.0
-tiktoken==0.9.0
+openai>=1.80.0
+tiktoken>=0.5.0
 
-# Data Processing
-requests==2.31.0
-urllib3==2.4.0
-certifi==2025.4.26
-charset-normalizer
-idna
+# Web Scraping (Optional - only if needed)
+playwright>=1.40.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
 
 # Utilities
-click
-colorama
-python-dateutil
-pytz
-typing-extensions==4.13.2
+python-multipart>=0.0.6

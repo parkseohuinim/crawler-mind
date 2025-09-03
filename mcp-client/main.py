@@ -8,6 +8,8 @@ from app.config import settings
 from app.core.logging import setup_logging
 from app.services.mcp_service import mcp_service
 from app.routers.api import router
+from app.menu_links.router import router as menu_links_router
+from app.database import init_database, close_database
 
 # Setup logging
 setup_logging()
@@ -19,10 +21,15 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting MCP FastAPI Server...")
     try:
+        # Initialize database
+        await init_database()
+        logger.info("Database initialized successfully")
+        
+        # Initialize MCP service
         await mcp_service.initialize()
         logger.info("MCP service initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize MCP service: {e}")
+        logger.error(f"Failed to initialize services: {e}")
     
     yield
     
@@ -31,8 +38,11 @@ async def lifespan(app: FastAPI):
     try:
         await mcp_service.shutdown()
         logger.info("MCP service shutdown completed")
+        
+        await close_database()
+        logger.info("Database connections closed")
     except Exception as e:
-        logger.error(f"Error during MCP service shutdown: {e}")
+        logger.error(f"Error during service shutdown: {e}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -53,6 +63,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(router)
+app.include_router(menu_links_router)
 
 # Development server
 if __name__ == "__main__":

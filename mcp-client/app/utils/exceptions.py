@@ -19,3 +19,7 @@ class LLMQueryError(MCPClientException):
 class SchemaConversionError(MCPClientException):
     """Raised when schema conversion fails"""
     pass
+
+class DatabaseError(MCPClientException):
+    """Raised when database operation fails"""
+    pass
