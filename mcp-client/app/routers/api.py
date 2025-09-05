@@ -14,6 +14,7 @@ from app.application.crawler.crawler_service import crawler_service
 from app.shared.exceptions.base import MCPConnectionError, LLMQueryError
 from app.shared.database.base import get_database_session
 from app.application.menu.menu_service import MenuApplicationService
+from app.presentation.api.rag.rag_router import router as rag_router
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -462,3 +463,7 @@ async def get_manager_info_by_id(
         logger.error(f"Manager info 조회 중 오류 발생: {e}")
         raise HTTPException(status_code=500, detail="Manager info 조회 중 오류가 발생했습니다")
 
+
+
+# Include RAG router
+router.include_router(rag_router)

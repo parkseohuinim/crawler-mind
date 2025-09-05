@@ -2,6 +2,7 @@
 from typing import List, Dict, Any, AsyncGenerator
 import json
 import logging
+import tiktoken
 from openai import AsyncOpenAI
 from app.config import settings
 from app.infrastructure.mcp.mcp_service import mcp_service
@@ -14,6 +15,13 @@ class LLMService:
     
     def __init__(self):
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+        
+        # Initialize tokenizer for token counting
+        try:
+            self.tokenizer = tiktoken.encoding_for_model("gpt-4o")
+        except Exception:
+            # Fallback to cl100k_base encoding
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
     
     async def query(self, question: str, available_tools: List[Dict[str, Any]]) -> str:
         """
@@ -52,6 +60,49 @@ class LLMService:
         except Exception as e:
             logger.error(f"LLM query failed: {e}")
             raise LLMQueryError(f"LLM 쿼리 실행 중 오류: {str(e)}")
+    
+    async def generate_response(self, prompt: str) -> str:
+        """
+        Generate a simple response using OpenAI Chat Completions API
+        
+        Args:
+            prompt: The prompt to send to the LLM
+            
+        Returns:
+            Generated response as string
+        """
+        try:
+            # 토큰 수 계산 및 제한 확인
+            tokens = self.tokenizer.encode(prompt)
+            token_count = len(tokens)
+            
+            # RAG용으로는 gpt-4o-mini 사용 (더 저렴하고 토큰 제한이 큼)
+            model = "gpt-4o-mini"  # RAG 응답 생성용
+            
+            # 토큰 제한 확인 (gpt-4o-mini는 128k context)
+            max_tokens = 20000  # 더 안전한 제한
+            if token_count > max_tokens:
+                logger.warning(f"Prompt too long ({token_count} tokens), truncating to {max_tokens}")
+                tokens = tokens[:max_tokens]
+                prompt = self.tokenizer.decode(tokens)
+                token_count = max_tokens
+            
+            logger.info(f"LLM request: {token_count} tokens, model: {model}")
+            
+            response = await self._client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "당신은 도움이 되는 AI 어시스턴트입니다. 주어진 정보를 바탕으로 정확하고 유용한 답변을 제공합니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000,  # 응답 토큰 수 증가
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"Failed to generate response: {e}")
+            raise LLMQueryError(f"Failed to generate response: {str(e)}")
     
     async def query_stream(self, question: str, available_tools: List[Dict[str, Any]]) -> AsyncGenerator[Dict[str, Any], None]:
         """

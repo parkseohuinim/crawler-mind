@@ -34,8 +34,15 @@ def setup_logging() -> None:
     logging.getLogger("mcp").setLevel(logging.ERROR)
     logging.getLogger("openai").setLevel(logging.ERROR)
     
-    # 앱 로그는 WARNING 레벨로 설정
-    logging.getLogger("app").setLevel(logging.WARNING)
+    # 앱 로그는 INFO 레벨로 설정 (디버깅을 위해)
+    logging.getLogger("app").setLevel(logging.INFO)
+    
+    # RAG 관련 로거들 명시적으로 INFO 레벨 설정
+    logging.getLogger("app.presentation.api.rag.rag_router").setLevel(logging.INFO)
+    logging.getLogger("app.application.rag.rag_service").setLevel(logging.INFO)
+    logging.getLogger("app.infrastructure.vectordb.qdrant_service").setLevel(logging.INFO)
+    logging.getLogger("app.infrastructure.search.opensearch_service").setLevel(logging.INFO)
+    logging.getLogger("app.infrastructure.llm.llm_service").setLevel(logging.INFO)
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance with the given name"""

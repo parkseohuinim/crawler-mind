@@ -23,6 +23,12 @@ export default function Navigation() {
             홈
           </Link>
           <Link 
+            href="/rag" 
+            className={`nav-link ${pathname === '/rag' ? 'active' : ''}`}
+          >
+            RAG 시스템
+          </Link>
+          <Link 
             href="/menu-links" 
             className={`nav-link ${pathname === '/menu-links' ? 'active' : ''}`}
           >

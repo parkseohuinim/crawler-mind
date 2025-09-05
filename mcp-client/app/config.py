@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = False
-    log_level: str = "warning"
+    log_level: str = "info"
     
     # MCP Server Configuration
     mcp_server_url: str = "http://127.0.0.1:4200/my-custom-path/"
@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     
     # Database Configuration
     database_url: str = "postgresql+asyncpg://user:password@localhost:5432/crawler_mind"
+    
+    # Vector Database Configuration (Qdrant)
+    qdrant_host: str = "127.0.0.1"
+    qdrant_port: int = 6333
+    
+    # Search Engine Configuration (OpenSearch)
+    opensearch_host: str = "127.0.0.1"
+    opensearch_port: int = 9200
     
     # Application Configuration
     app_title: str = "MCP FastAPI Server"

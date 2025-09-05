@@ -10,6 +10,7 @@ from app.infrastructure.mcp.mcp_service import mcp_service
 from app.routers.api import router as api_router
 from app.presentation.api.menu.menu_router import router as menu_router
 from app.shared.database.base import init_database, close_database
+from app.application.rag.rag_service import rag_service
 
 # Setup logging
 setup_logging()
@@ -28,8 +29,27 @@ async def lifespan(app: FastAPI):
         # Initialize MCP service
         await mcp_service.initialize()
         logger.info("MCP service initialized successfully")
+        
     except Exception as e:
-        logger.error(f"Failed to initialize services: {e}")
+        logger.error(f"Failed to initialize core services: {e}")
+    
+    # Initialize RAG service separately (optional)
+    try:
+        logger.info("Starting RAG service initialization...")
+        await rag_service.initialize_services()
+        logger.info("✅ RAG service initialized successfully")
+        
+        # RAG 서비스 상태 확인
+        data_info = await rag_service.get_data_info()
+        if data_info.get("success"):
+            qdrant_count = data_info["summary"]["qdrant_documents"]
+            opensearch_count = data_info["summary"]["opensearch_documents"]
+            logger.info(f"📊 Current RAG data: Qdrant={qdrant_count}, OpenSearch={opensearch_count}")
+        
+    except Exception as e:
+        logger.warning(f"RAG service initialization failed (will continue without RAG): {e}")
+        import traceback
+        logger.debug(f"RAG init traceback: {traceback.format_exc()}")
     
     yield
     
