@@ -10,7 +10,7 @@ export default function ResultDisplay({ result }: ResultDisplayProps) {
   if (result.error) {
     return (
       <div className="result-container">
-        <div className="result-title">❌ 오류 발생</div>
+        <div className="result-title">오류 발생</div>
         <div style={{ color: '#f56565', fontSize: '0.875rem' }}>
           {result.error}
         </div>
@@ -20,7 +20,7 @@ export default function ResultDisplay({ result }: ResultDisplayProps) {
 
   return (
     <div className="result-container">
-      <div className="result-title">📊 크롤링 결과</div>
+      <div className="result-title">크롤링 결과</div>
       
       {result.title && (
         <div className="result-item">

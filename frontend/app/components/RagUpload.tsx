@@ -65,7 +65,7 @@ export default function RagUpload({ onUploadSuccess }: RagUploadProps) {
   return (
     <div className="rag-upload-container">
       <div className="rag-upload-header">
-        <h2>📁 RAG 데이터 업로드</h2>
+        <h2>RAG 데이터 업로드</h2>
         <p>JSON 형태의 문서 데이터를 업로드하여 AI 질의응답에 활용하세요</p>
       </div>
       
@@ -92,13 +92,13 @@ export default function RagUpload({ onUploadSuccess }: RagUploadProps) {
         {file && (
           <div className="selected-file-info">
             <div className="file-details">
-              <span className="file-icon">📄</span>
+              <span className="file-icon">[파일]</span>
               <div className="file-info">
                 <div className="file-name">{file.name}</div>
                 <div className="file-size">{(file.size / 1024 / 1024).toFixed(2)} MB</div>
               </div>
               <button onClick={resetFile} className="file-remove-btn" disabled={uploading}>
-                ✕
+  X
               </button>
             </div>
           </div>
@@ -117,7 +117,13 @@ export default function RagUpload({ onUploadSuccess }: RagUploadProps) {
               </>
             ) : (
               <>
-                <span>📤</span>
+                <img 
+                  src="/icons/rocket-spaceship-start-svgrepo-com.svg" 
+                  alt="업로드" 
+                  width="50" 
+                  height="50"
+                  className="upload-start-icon"
+                />
                 업로드 시작
               </>
             )}
@@ -129,7 +135,7 @@ export default function RagUpload({ onUploadSuccess }: RagUploadProps) {
             message.includes('완료') ? 'success' : 'error'
           }`}>
             <span className="message-icon">
-              {message.includes('완료') ? '✅' : '❌'}
+              {message.includes('완료') ? '✓' : '✗'}
             </span>
             {message}
           </div>

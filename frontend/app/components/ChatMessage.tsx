@@ -14,7 +14,13 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   return (
     <div className={`message ${message.type}`}>
       <div className={`message-avatar ${message.type}`}>
-        {isUser ? '👤' : '🤖'}
+        <img 
+          src={isUser ? '/icons/account-avatar-profile-user-7-svgrepo-com.svg' : '/icons/scientist-medium-dark-skin-tone-svgrepo-com.svg'} 
+          alt={isUser ? '사용자' : 'AI'} 
+          width="50" 
+          height="50"
+          className="avatar-icon"
+        />
       </div>
       <div className={`message-content ${message.type}`}>
         <div>{message.content}</div>

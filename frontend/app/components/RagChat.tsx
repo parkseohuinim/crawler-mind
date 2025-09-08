@@ -133,7 +133,7 @@ export default function RagChat() {
       <div className="rag-chat-header">
         <div className="chat-header-content">
           <div className="header-title-section">
-            <h2>💬 스마트 AI 어시스턴트</h2>
+            <h2>스마트 AI 어시스턴트</h2>
             <p>업로드된 문서를 기반으로 정확한 답변을 제공합니다</p>
           </div>
           {messages.length > 0 && (
@@ -142,7 +142,13 @@ export default function RagChat() {
               className="clear-history-button"
               title="대화 내역 삭제"
             >
-              🗑️
+              <img 
+                src="/icons/delete-trash-svgrepo-com.svg" 
+                alt="삭제" 
+                width="20" 
+                height="20"
+                className="delete-icon"
+              />
             </button>
           )}
         </div>
@@ -151,7 +157,7 @@ export default function RagChat() {
       <div className="rag-messages-container">
         {messages.length === 0 ? (
           <div className="rag-empty-state">
-            <div className="empty-icon">🤖</div>
+            <div className="empty-icon">AI</div>
             <div className="empty-title">질문을 입력해보세요</div>
             <div className="empty-subtitle">
               업로드된 문서를 기반으로 정확한 답변을 제공해드립니다
@@ -167,7 +173,13 @@ export default function RagChat() {
             {messages.map((message) => (
               <div key={message.id} className={`message ${message.type}`}>
                 <div className={`message-avatar ${message.type}`}>
-                  {message.type === 'user' ? '👤' : '🤖'}
+                  <img 
+                    src={message.type === 'user' ? '/icons/account-avatar-profile-user-7-svgrepo-com.svg' : '/icons/scientist-medium-dark-skin-tone-svgrepo-com.svg'} 
+                    alt={message.type === 'user' ? '사용자' : 'AI'} 
+                    width="50" 
+                    height="50"
+                    className="avatar-icon"
+                  />
                 </div>
                 <div className="message-content">
                   <div className="message-text">
@@ -184,7 +196,7 @@ export default function RagChat() {
                   </div>
                   {message.sources && message.sources.length > 0 && (
                     <div className="message-sources">
-                      <div className="sources-title">📚 참고 문서</div>
+                      <div className="sources-title">참고 문서</div>
                       {message.sources.slice(0, 3).map((source, index) => (
                         <div key={source.id} className="source-item">
                           <span className="source-number">{index + 1}</span>
@@ -195,7 +207,7 @@ export default function RagChat() {
                                 {source.score_label || '점수'}: {source.similarity_score.toFixed(3)}
                               </div>
                               <div className="source-method">
-                                {source.search_source === 'vector' ? '🔍' : '📝'} {source.search_method || '알 수 없음'}
+                                {source.search_source === 'vector' ? '[V]' : '[T]'} {source.search_method || '알 수 없음'}
                               </div>
                               {source.raw_score !== undefined && (
                                 <div className="source-raw-score">
@@ -216,7 +228,15 @@ export default function RagChat() {
             ))}
             {loading && (
               <div className="message assistant">
-                <div className="message-avatar assistant">🤖</div>
+                <div className="message-avatar assistant">
+                  <img 
+                    src="/icons/scientist-medium-dark-skin-tone-svgrepo-com.svg" 
+                    alt="AI" 
+                    width="36" 
+                    height="36"
+                    className="avatar-icon"
+                  />
+                </div>
                 <div className="message-content">
                   <div className="message-text loading">
                     <span className="loading-dots">
@@ -249,7 +269,7 @@ export default function RagChat() {
             disabled={!input.trim() || loading}
             className="send-button"
           >
-            {loading ? '⏳' : '📤'}
+            {loading ? '전송 중...' : '전송'}
           </button>
         </div>
       </form>

@@ -23,28 +23,46 @@ export default function RagPage() {
               onClick={() => setActiveTab('chat')}
               className={`rag-tab-button ${activeTab === 'chat' ? 'active' : ''}`}
             >
-              <span className="tab-icon">💬</span>
+              <img 
+                src="/icons/chat-communication-message-talk-svgrepo-com.svg" 
+                alt="채팅" 
+                width="35" 
+                height="35"
+                className="tab-icon"
+              />
               <span className="tab-label">질의응답</span>
             </button>
             <button
               onClick={() => setActiveTab('upload')}
               className={`rag-tab-button ${activeTab === 'upload' ? 'active' : ''}`}
             >
-              <span className="tab-icon">📁</span>
+              <img 
+                src="/icons/upload-file-document-svgrepo-com.svg" 
+                alt="업로드" 
+                width="35" 
+                height="35"
+                className="tab-icon"
+              />
               <span className="tab-label">파일 업로드</span>
             </button>
             <button
               onClick={() => setActiveTab('search')}
               className={`rag-tab-button ${activeTab === 'search' ? 'active' : ''}`}
             >
-              <span className="tab-icon">🔍</span>
+              <img 
+                src="/icons/search-svgrepo-com.svg" 
+                alt="검색" 
+                width="30" 
+                height="30"
+                className="tab-icon"
+              />
               <span className="tab-label">문서 검색</span>
             </button>
             <button
               onClick={() => setActiveTab('manage')}
               className={`rag-tab-button ${activeTab === 'manage' ? 'active' : ''}`}
             >
-              <span className="tab-icon">🗄️</span>
+              <span className="tab-icon">[관리]</span>
               <span className="tab-label">데이터 관리</span>
             </button>
           </div>
@@ -56,7 +74,13 @@ export default function RagPage() {
                 
                 <div className="rag-info-card tips">
                   <div className="info-card-header">
-                    <span className="info-icon">💡</span>
+                    <img 
+                      src="/icons/feather-pen-svgrepo-com.svg" 
+                      alt="팁" 
+                      width="35" 
+                      height="35"
+                      className="info-icon"
+                    />
                     <h3>사용 팁</h3>
                   </div>
                   <div className="info-card-content">
@@ -83,7 +107,13 @@ export default function RagPage() {
                 
                 <div className="rag-info-card">
                   <div className="info-card-header">
-                    <span className="info-icon">📋</span>
+                    <img 
+                      src="/icons/announcement-shout-svgrepo-com.svg" 
+                      alt="안내" 
+                      width="35" 
+                      height="35"
+                      className="info-icon"
+                    />
                     <h3>파일 형식 안내</h3>
                   </div>
                   <div className="info-card-content">
@@ -123,7 +153,13 @@ export default function RagPage() {
                 
                 <div className="rag-info-card">
                   <div className="info-card-header">
-                    <span className="info-icon">ℹ️</span>
+                    <img 
+                      src="/icons/info-information-svgrepo-com.svg" 
+                      alt="정보" 
+                      width="30" 
+                      height="30"
+                      className="info-icon"
+                    />
                     <h3>문서 검색 안내</h3>
                   </div>
                   <div className="info-card-content">
@@ -154,7 +190,13 @@ export default function RagPage() {
                 
                 <div className="rag-info-card">
                   <div className="info-card-header">
-                    <span className="info-icon">ℹ️</span>
+                    <img 
+                      src="/icons/info-information-svgrepo-com.svg" 
+                      alt="정보" 
+                      width="30" 
+                      height="30"
+                      className="info-icon"
+                    />
                     <h3>데이터 관리 안내</h3>
                   </div>
                   <div className="info-card-content">

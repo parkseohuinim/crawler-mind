@@ -479,7 +479,7 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
               className="zoom-button"
               title="확대"
             >
-              🔍+
+  +
             </button>
             <span className="zoom-level">{Math.round(zoomLevel * 100)}%</span>
             <button 
@@ -487,7 +487,7 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
               className="zoom-button"
               title="축소"
             >
-              🔍-
+  -
             </button>
             <button 
               onClick={resetZoom}
@@ -505,7 +505,13 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
                 color: showLegend ? 'white' : '#4a5568'
               }}
             >
-              📊
+              <img 
+                src="/icons/chart-pipe-svgrepo-com.svg" 
+                alt="범례" 
+                width="20" 
+                height="20"
+                style={{ filter: showLegend ? 'brightness(0) invert(1)' : 'none' }}
+              />
             </button>
           </div>
         </div>
@@ -684,7 +690,13 @@ export default function MenuTreeChart({ menuLinks }: MenuTreeChartProps) {
           <div className="chart-legend">
             <div className="legend-header">
               <h4 className="legend-title">
-                <span className="legend-icon">📊</span>
+                <img 
+                  src="/icons/chart-pipe-svgrepo-com.svg" 
+                  alt="차트" 
+                  width="35" 
+                  height="35"
+                  className="legend-icon"
+                />
                 레벨별 색상 범례
               </h4>
               <div className="legend-subtitle">

@@ -86,7 +86,7 @@ export default function DocumentSearch() {
   };
 
   const getSearchTypeIcon = (type: 'vector' | 'text') => {
-    return type === 'vector' ? '🔍' : '📝';
+    return type === 'vector' ? '[V]' : '[T]';
   };
 
   const getSearchTypeLabel = (type: 'vector' | 'text') => {
@@ -134,7 +134,7 @@ export default function DocumentSearch() {
               disabled={!query.trim() || loading}
               className="search-button"
             >
-              {loading ? '⏳' : '🔍'}
+              {loading ? '검색 중...' : '검색'}
             </button>
           </div>
         </form>
@@ -213,7 +213,7 @@ export default function DocumentSearch() {
                       </span>
                       {result.search_method && (
                         <span className="search-method">
-                          {result.search_source === 'vector' ? '🔍' : '📝'} {result.search_method}
+                          {result.search_source === 'vector' ? '[V]' : '[T]'} {result.search_method}
                         </span>
                       )}
                       {result.raw_score !== undefined && (
@@ -227,7 +227,14 @@ export default function DocumentSearch() {
 
                 {result.hierarchy.length > 0 && (
                   <div className="result-hierarchy">
-                    📁 {formatHierarchy(result.hierarchy)}
+                    <img 
+                      src="/icons/document-file-page-paper-svgrepo-com.svg" 
+                      alt="폴더" 
+                      width="40" 
+                      height="40"
+                      className="hierarchy-icon"
+                    />
+                    {formatHierarchy(result.hierarchy)}
                   </div>
                 )}
 
@@ -265,7 +272,7 @@ export default function DocumentSearch() {
                       rel="noopener noreferrer"
                       className="result-url"
                     >
-                      🔗 원본 문서 보기
+                      [링크] 원본 문서 보기
                     </a>
                   </div>
                 )}
@@ -274,13 +281,20 @@ export default function DocumentSearch() {
           </div>
         ) : query && !loading ? (
           <div className="no-results">
-            <div className="no-results-icon">🔍</div>
+            <div className="no-results-icon">[검색]</div>
             <h3>검색 결과가 없습니다</h3>
             <p>다른 키워드로 검색해보세요</p>
           </div>
         ) : (
           <div className="empty-state">
-            <div className="empty-icon">📚</div>
+            <div className="empty-icon">
+              <img 
+                src="/icons/document-file-page-paper-svgrepo-com.svg" 
+                alt="문서" 
+                width="40" 
+                height="40"
+              />
+            </div>
             <h3>문서를 검색해보세요</h3>
             <p>업로드된 문서에서 원하는 정보를 찾을 수 있습니다</p>
             <div className="example-queries">

@@ -4,8 +4,8 @@ const MCP_CLIENT_URL = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
 
 export async function DELETE(request: NextRequest) {
   try {
-    console.log('🗑️ RAG Delete API - MCP_CLIENT_URL:', MCP_CLIENT_URL);
-    console.log('🗑️ RAG Delete API - Full URL:', `${MCP_CLIENT_URL}/api/rag/data`);
+    console.log('RAG Delete API - MCP_CLIENT_URL:', MCP_CLIENT_URL);
+    console.log('RAG Delete API - Full URL:', `${MCP_CLIENT_URL}/api/rag/data`);
     
     const response = await fetch(`${MCP_CLIENT_URL}/api/rag/data`, {
       method: 'DELETE',
@@ -15,7 +15,7 @@ export async function DELETE(request: NextRequest) {
       },
     });
 
-    console.log('🗑️ RAG Delete API - Response status:', response.status);
+    console.log('RAG Delete API - Response status:', response.status);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
