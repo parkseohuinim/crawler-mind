@@ -62,7 +62,13 @@ export default function RagPage() {
               onClick={() => setActiveTab('manage')}
               className={`rag-tab-button ${activeTab === 'manage' ? 'active' : ''}`}
             >
-              <span className="tab-icon">[관리]</span>
+              <img 
+                src="/icons/tool-screwdriver-svgrepo-com.svg" 
+                alt="관리" 
+                width="30" 
+                height="30"
+                className="tab-icon"
+              />
               <span className="tab-label">데이터 관리</span>
             </button>
           </div>

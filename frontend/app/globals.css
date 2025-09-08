@@ -3873,11 +3873,21 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.section-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  margin-right: 0.5rem;
+}
+
 .section-header h3 {
   font-size: 1.25rem;
   font-weight: 600;
   color: #f7fafc;
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .refresh-button {
@@ -3959,7 +3969,9 @@ body {
 }
 
 .card-icon {
-  font-size: 1.5rem;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 
 .card-header h4 {

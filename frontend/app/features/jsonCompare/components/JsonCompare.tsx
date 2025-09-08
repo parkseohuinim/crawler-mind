@@ -333,10 +333,10 @@ export default function JsonCompare() {
                                 <td className="manager-cell">
                                   <div className="manager-info">
                                     <div className="team-name">
-                                      <strong>팀:</strong> {item.manager_info.team_name}
+                                      <strong>팀:</strong> {item.manager_info?.team_name || '-'}
                                     </div>
                                     <div className="manager-names">
-                                      <strong>담당자:</strong> {item.manager_info.manager_names}
+                                      <strong>담당자:</strong> {item.manager_info?.manager_names || '-'}
                                     </div>
                                   </div>
                                 </td>

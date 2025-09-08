@@ -112,7 +112,13 @@ export default function RagDataManager() {
             <div className="data-info-grid">
               <div className="data-info-card qdrant">
                 <div className="card-header">
-                  <span className="card-icon">Q</span>
+                  <img 
+                    src="/icons/qdrant-icon.svg" 
+                    alt="Qdrant" 
+                    width="24" 
+                    height="24"
+                    className="card-icon"
+                  />
                   <h4>Qdrant (벡터 DB)</h4>
                 </div>
                 <div className="card-content">
@@ -132,7 +138,13 @@ export default function RagDataManager() {
 
               <div className="data-info-card opensearch">
                 <div className="card-header">
-                  <span className="card-icon">O</span>
+                  <img 
+                    src="/icons/opensearch-icon.svg" 
+                    alt="OpenSearch" 
+                    width="24" 
+                    height="24"
+                    className="card-icon"
+                  />
                   <h4>OpenSearch (검색 DB)</h4>
                 </div>
                 <div className="card-content">
@@ -156,6 +168,13 @@ export default function RagDataManager() {
         {/* Data Management Section */}
         <div className="data-management-section">
           <div className="section-header">
+            <img 
+              src="/icons/tool-screwdriver-svgrepo-com.svg" 
+              alt="관리" 
+              width="24" 
+              height="24"
+              className="section-icon"
+            />
             <h3>데이터 관리</h3>
           </div>
 
