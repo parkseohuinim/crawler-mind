@@ -46,6 +46,12 @@ export default function Navigation() {
           >
             메뉴 트리뷰
           </Link>
+          <Link 
+            href="/json-compare" 
+            className={`nav-link ${pathname === '/json-compare' ? 'active' : ''}`}
+          >
+            JSON 비교
+          </Link>
         </div>
       </div>
     </nav>

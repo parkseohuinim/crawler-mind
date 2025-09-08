@@ -114,6 +114,14 @@ npm run dev
 - 모던한 웹 인터페이스
 - 반응형 디자인
 
+### JSON 파일 비교 기능
+- 두 JSON 파일의 상세 비교 분석
+- URL 기반 객체 단위 비교
+- 추가/삭제/수정된 객체 추적
+- JavaScript 검출 기능
+- PDF 리포트 자동 생성
+- 실시간 비교 진행 상황 모니터링
+
 ## 요구사항
 
 - **Python**: 3.8+
@@ -200,6 +208,12 @@ crawler-mind/
 - `POST /api/process-url` - URL 크롤링 작업 시작
 - `GET /api/stream/{taskId}` - 크롤링 진행 상황 스트리밍
 - `GET /api/result/{taskId}` - 크롤링 결과 조회
+
+### JSON 비교 API
+- `POST /api/json-compare/compare` - JSON 파일 비교 작업 시작
+- `GET /api/json-compare/task/{taskId}` - 비교 작업 상태 조회
+- `GET /api/json-compare/task/{taskId}/result` - 비교 결과 조회
+- `GET /api/json-compare/task/{taskId}/download` - PDF 리포트 다운로드
 
 ## 데이터베이스 스키마
 

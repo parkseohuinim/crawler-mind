@@ -15,6 +15,7 @@ from app.shared.exceptions.base import MCPConnectionError, LLMQueryError
 from app.shared.database.base import get_database_session
 from app.application.menu.menu_service import MenuApplicationService
 from app.presentation.api.rag.rag_router import router as rag_router
+from app.presentation.api.json_compare.json_compare_router import router as json_compare_router
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -467,3 +468,6 @@ async def get_manager_info_by_id(
 
 # Include RAG router
 router.include_router(rag_router)
+
+# Include JSON Compare router
+router.include_router(json_compare_router)

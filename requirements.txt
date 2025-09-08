@@ -33,3 +33,6 @@ lxml>=4.9.0
 # Utilities
 python-multipart>=0.0.6
 aiolimiter>=1.1.0
+
+# PDF Generation
+reportlab>=4.0.0
