@@ -66,6 +66,11 @@ async def get_task_status(task_id: str):
         if not task:
             raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
         
+        # URL이 비어있는 항목들의 담당자 정보 조회
+        empty_url_items = []
+        if task.status == 'completed':
+            empty_url_items = await json_compare_service.get_empty_url_items_with_managers(task_id)
+        
         return JsonComparisonTaskResponse(
             id=task.id,
             file1_name=task.file1_name,
@@ -73,7 +78,8 @@ async def get_task_status(task_id: str):
             created_at=task.created_at,
             status=task.status,
             result=JsonComparisonResultResponse(**task.result.to_dict()) if task.result else None,
-            error_message=task.error_message
+            error_message=task.error_message,
+            empty_url_items=empty_url_items
         )
         
     except HTTPException:

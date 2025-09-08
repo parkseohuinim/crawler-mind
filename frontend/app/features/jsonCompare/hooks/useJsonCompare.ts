@@ -1,45 +1,16 @@
 'use client';
 
 import { useState, useRef } from 'react';
-
-interface ComparisonResult {
-  id: string;
-  file1_name: string;
-  file2_name: string;
-  file1_size: number;
-  file2_size: number;
-  total_objects_1: number;
-  total_objects_2: number;
-  objects_removed: number;
-  objects_added: number;
-  objects_modified: number;
-  objects_unchanged: number;
-  total_changes: number;
-  javascript_pages: number;
-  created_at: string;
-  status: string;
-  error_message?: string;
-  pdf_file_path?: string;
-  summary_report?: string;
-}
-
-interface TaskStatus {
-  id: string;
-  file1_name: string;
-  file2_name: string;
-  created_at: string;
-  status: string;
-  result?: ComparisonResult;
-  error_message?: string;
-}
+import { JsonComparisonResult, JsonComparisonTask, EmptyUrlItem } from '@/app/types';
 
 export function useJsonCompare() {
   const [file1, setFile1] = useState<File | null>(null);
   const [file2, setFile2] = useState<File | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
-  const [result, setResult] = useState<ComparisonResult | null>(null);
+  const [taskStatus, setTaskStatus] = useState<JsonComparisonTask | null>(null);
+  const [result, setResult] = useState<JsonComparisonResult | null>(null);
+  const [emptyUrlItems, setEmptyUrlItems] = useState<EmptyUrlItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   
   const file1Ref = useRef<HTMLInputElement>(null);
@@ -122,11 +93,12 @@ export function useJsonCompare() {
           throw new Error('작업 상태 조회에 실패했습니다.');
         }
 
-        const status: TaskStatus = await response.json();
+        const status: JsonComparisonTask = await response.json();
         setTaskStatus(status);
 
         if (status.status === 'completed' && status.result) {
           setResult(status.result);
+          setEmptyUrlItems(status.empty_url_items || []);
           setIsComparing(false);
         } else if (status.status === 'failed') {
           setError(status.error_message || '비교 작업이 실패했습니다.');
@@ -185,6 +157,7 @@ export function useJsonCompare() {
     setTaskId(null);
     setTaskStatus(null);
     setResult(null);
+    setEmptyUrlItems([]);
     setError(null);
     
     if (file1Ref.current) file1Ref.current.value = '';
@@ -198,6 +171,7 @@ export function useJsonCompare() {
     taskId,
     taskStatus,
     result,
+    emptyUrlItems,
     error,
     file1Ref,
     file2Ref,

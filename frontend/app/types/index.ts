@@ -35,3 +35,48 @@ export interface TaskResponse {
 }
 
 export type ProcessingMode = 'auto' | 'basic';
+
+// JSON 비교 관련 타입
+export interface ManagerInfo {
+  team_name: string;
+  manager_names: string;
+}
+
+export interface EmptyUrlItem {
+  url: string;
+  title: string;
+  hierarchy: string;
+  manager_info?: ManagerInfo;
+}
+
+export interface JsonComparisonResult {
+  id: string;
+  file1_name: string;
+  file2_name: string;
+  file1_size: number;
+  file2_size: number;
+  total_objects_1: number;
+  total_objects_2: number;
+  objects_removed: number;
+  objects_added: number;
+  objects_modified: number;
+  objects_unchanged: number;
+  total_changes: number;
+  javascript_pages: number;
+  created_at: string;
+  status: string;
+  error_message?: string;
+  pdf_file_path?: string;
+  summary_report?: string;
+}
+
+export interface JsonComparisonTask {
+  id: string;
+  file1_name: string;
+  file2_name: string;
+  created_at: string;
+  status: string;
+  result?: JsonComparisonResult;
+  error_message?: string;
+  empty_url_items?: EmptyUrlItem[];
+}

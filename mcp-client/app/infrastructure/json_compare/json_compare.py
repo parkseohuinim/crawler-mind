@@ -716,7 +716,7 @@ class URLBasedComparator:
         # 간단한 "링크" 버튼 형태
         return f'<link href="{escaped_url}">🔗 바로가기</link>'
 
-    def generate_pdf_report(self, summary: Dict[str, Any], output_file: str) -> None:
+    def generate_pdf_report(self, summary: Dict[str, Any], output_file: str, empty_url_items: List[Dict[str, Any]] = None) -> None:
         """비교 결과를 PDF 파일로 생성합니다."""
         import logging
         logger = logging.getLogger(__name__)
@@ -1154,6 +1154,48 @@ class URLBasedComparator:
             ]))
             
             story.append(js_table)
+        
+        # murl 필드가 비어있는 항목들의 담당자 정보
+        if empty_url_items and len(empty_url_items) > 0:
+            story.append(Spacer(1, 20))
+            story.append(Paragraph(f"■ murl 필드가 비어있는 항목들의 담당자 정보 (총 {len(empty_url_items)}개)", heading_style))
+            
+            manager_data = [["URL", "페이지 제목", "페이지 경로", "담당자 정보"]]
+            for item in empty_url_items:
+                title = self.decode_html_entities(item.get('title', '제목 없음'))
+                hierarchy = self.decode_html_entities(item.get('hierarchy', '경로 없음'))
+                url = self.decode_html_entities(item.get('url', ''))
+                manager_info = item.get('manager_info')
+                
+                # 담당자 정보 포맷팅 (담당자 정보가 있는 경우만 처리)
+                team_name = manager_info.get('team_name', '')
+                manager_names = manager_info.get('manager_names', '')
+                manager_text = f"팀: {team_name}\n담당자: {manager_names}"
+                
+                # Paragraph로 감싸서 자동 줄바꿈 적용
+                url_para = Paragraph(self.escape_for_paragraph(url), ParagraphStyle('CellStyle', parent=normal_style, fontSize=5, fontName=korean_font))
+                title_para = Paragraph(self.escape_for_paragraph(title), ParagraphStyle('CellStyle', parent=normal_style, fontSize=6, fontName=korean_font))
+                hierarchy_para = Paragraph(self.escape_for_paragraph(hierarchy), ParagraphStyle('CellStyle', parent=normal_style, fontSize=6, fontName=korean_font))
+                manager_para = Paragraph(self.escape_for_paragraph(manager_text), ParagraphStyle('CellStyle', parent=normal_style, fontSize=6, fontName=korean_font))
+                
+                manager_data.append([url_para, title_para, hierarchy_para, manager_para])
+            
+            manager_table = Table(manager_data, colWidths=[1.5*inch, 1.5*inch, 1.2*inch, 1.8*inch], repeatRows=1)
+            manager_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), korean_font),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('WORDWRAP', (0, 0), (-1, -1), 'LTR')
+            ]))
+            
+            story.append(manager_table)
         
         # 페이지 마무리
         story.append(Spacer(1, 30))

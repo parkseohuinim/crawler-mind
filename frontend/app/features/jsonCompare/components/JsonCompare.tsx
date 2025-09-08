@@ -11,6 +11,7 @@ export default function JsonCompare() {
     taskId,
     taskStatus,
     result,
+    emptyUrlItems,
     error,
     file1Ref,
     file2Ref,
@@ -280,6 +281,70 @@ export default function JsonCompare() {
                       <pre className="summary-text">
                         {result.summary_report}
                       </pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* URL이 비어있는 항목들의 담당자 정보 */}
+                {emptyUrlItems && emptyUrlItems.length > 0 && (
+                  <div className="empty-url-card">
+                    <div className="empty-url-header">
+                      <img 
+                        src="/icons/scientist-medium-dark-skin-tone-svgrepo-com.svg" 
+                        alt="담당자" 
+                        width="20" 
+                        height="20"
+                        className="empty-url-icon"
+                      />
+                      <h4>murl 필드가 비어있는 항목들의 담당자 정보</h4>
+                      <span className="empty-url-count">({emptyUrlItems.length}개)</span>
+                    </div>
+                    <div className="empty-url-content">
+                      <div className="empty-url-table">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>URL</th>
+                              <th>페이지 제목</th>
+                              <th>페이지 경로</th>
+                              <th>담당자 정보</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {emptyUrlItems.map((item, index) => (
+                              <tr key={index}>
+                                <td className="url-cell">
+                                  {item.url ? (
+                                    <a href={item.url} target="_blank" rel="noopener noreferrer">
+                                      {item.url.length > 50 
+                                        ? `${item.url.substring(0, 50)}...` 
+                                        : item.url}
+                                    </a>
+                                  ) : (
+                                    <span className="no-url">-</span>
+                                  )}
+                                </td>
+                                <td className="title-cell">
+                                  {item.title || '-'}
+                                </td>
+                                <td className="hierarchy-cell">
+                                  {item.hierarchy || '-'}
+                                </td>
+                                <td className="manager-cell">
+                                  <div className="manager-info">
+                                    <div className="team-name">
+                                      <strong>팀:</strong> {item.manager_info.team_name}
+                                    </div>
+                                    <div className="manager-names">
+                                      <strong>담당자:</strong> {item.manager_info.manager_names}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 )}

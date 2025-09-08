@@ -1,6 +1,6 @@
 """JSON Compare Schemas"""
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
@@ -41,6 +41,20 @@ class JsonComparisonResultResponse(BaseModel):
     summary_report: Optional[str] = Field(None, description="요약 리포트")
 
 
+class ManagerInfo(BaseModel):
+    """담당자 정보 스키마"""
+    team_name: str = Field(..., description="팀명")
+    manager_names: str = Field(..., description="담당자명")
+
+
+class EmptyUrlItem(BaseModel):
+    """URL이 비어있는 항목 스키마"""
+    url: str = Field(..., description="URL")
+    title: str = Field(..., description="페이지 제목")
+    hierarchy: str = Field(..., description="페이지 경로")
+    manager_info: Optional[ManagerInfo] = Field(None, description="담당자 정보")
+
+
 class JsonComparisonTaskResponse(BaseModel):
     """JSON 비교 작업 응답 스키마"""
     id: str = Field(..., description="작업 ID")
@@ -50,3 +64,4 @@ class JsonComparisonTaskResponse(BaseModel):
     status: str = Field(..., description="작업 상태")
     result: Optional[JsonComparisonResultResponse] = Field(None, description="비교 결과")
     error_message: Optional[str] = Field(None, description="오류 메시지")
+    empty_url_items: Optional[List[EmptyUrlItem]] = Field(None, description="URL이 비어있는 항목들")
