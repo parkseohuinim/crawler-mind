@@ -229,6 +229,9 @@ sessions/
 .vscode/launch.json
 .vscode/extensions.json
 
+# Claude AI
+.claude/
+
 # Package managers
 Pipfile.lock
 poetry.lock
