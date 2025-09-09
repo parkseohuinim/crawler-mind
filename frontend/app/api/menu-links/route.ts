@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { menuLinkService } from '@/app/_lib/domains/menuLink';
 
 // 임시로 하드코딩 (환경 변수 문제 해결 후 제거)
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 // GET /api/menu-links
 export async function GET(request: NextRequest) {

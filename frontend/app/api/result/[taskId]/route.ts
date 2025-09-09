@@ -16,10 +16,10 @@ export async function GET(
       );
     }
 
-    const mcpClientUrl = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+    const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
     // MCP Client의 결과 조회 엔드포인트 호출
-    const response = await fetch(`${mcpClientUrl}/api/result/${taskId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/result/${taskId}`, {
       method: 'GET',
       cache: 'no-store',
       headers: {

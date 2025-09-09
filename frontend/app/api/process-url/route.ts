@@ -13,10 +13,10 @@ export async function POST(request: NextRequest) {
     }
 
     // MCP Client 백엔드 서버 URL (환경변수로 설정)
-    const mcpClientUrl = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+    const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
     // MCP Client의 process-url 엔드포인트 호출
-    const response = await fetch(`${mcpClientUrl}/api/process-url`, {
+    const response = await fetch(`${API_BASE_URL}/api/process-url`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MCP_CLIENT_URL = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('RAG Info API - MCP_CLIENT_URL:', MCP_CLIENT_URL);
-    console.log('RAG Info API - Full URL:', `${MCP_CLIENT_URL}/api/rag/data/info`);
+    console.log('RAG Info API - MCP_CLIENT_URL:', API_BASE_URL);
+    console.log('RAG Info API - Full URL:', `${API_BASE_URL}/api/rag/data/info`);
     
-    const response = await fetch(`${MCP_CLIENT_URL}/api/rag/data/info`, {
+    const response = await fetch(`${API_BASE_URL}/api/rag/data/info`, {
       method: 'GET',
       cache: 'no-cache', // 캐시 비활성화
       headers: {

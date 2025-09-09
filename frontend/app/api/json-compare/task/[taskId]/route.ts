@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MCP_CLIENT_URL = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 export async function GET(
   request: NextRequest,
@@ -9,7 +9,7 @@ export async function GET(
   try {
     const { taskId } = params;
 
-    const response = await fetch(`${MCP_CLIENT_URL}/api/json-compare/task/${taskId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/json-compare/task/${taskId}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',

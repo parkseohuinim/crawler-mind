@@ -21,7 +21,7 @@ export function useSSE({ taskId, onEvent, onError, onComplete }: UseSSEProps) {
     const connectSSE = () => {
       try {
         // 직접 백엔드에 연결 (프록시 우회)
-        const eventSource = new EventSource(`http://localhost:8000/api/stream/${taskId}`);
+        const eventSource = new EventSource(`/api/stream/${taskId}`);
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {

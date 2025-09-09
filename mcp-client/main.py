@@ -81,6 +81,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for container orchestration"""
+    return {"status": "healthy", "service": "mcp-client"}
+
 # Include routers
 app.include_router(api_router, prefix="/api")  # Keep existing API for backward compatibility
 app.include_router(menu_router)  # New DDD-based menu API

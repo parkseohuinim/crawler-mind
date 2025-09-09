@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MCP_CLIENT_URL = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const searchUrl = new URL(`${MCP_CLIENT_URL}/api/rag/search`);
+    const searchUrl = new URL(`${API_BASE_URL}/api/rag/search`);
     searchUrl.searchParams.set('query', query.trim());
     searchUrl.searchParams.set('limit', limit.toString());
     searchUrl.searchParams.set('include_content', includeContent.toString());

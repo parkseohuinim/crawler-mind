@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MCP_CLIENT_URL = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       similarity_threshold: similarityThreshold,
     };
 
-    const response = await fetch(`${MCP_CLIENT_URL}/api/rag/query`, {
+    const response = await fetch(`${API_BASE_URL}/api/rag/query`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

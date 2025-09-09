@@ -20,6 +20,18 @@ logging.getLogger("mcp.server.lowlevel").setLevel(logging.WARNING)
 
 mcp = FastMCP(name="CrawlerMindServer")
 
+# Health check endpoint (MCP tool)
+@mcp.tool
+def health_check() -> Dict[str, Any]:
+    """
+    Health check endpoint for container orchestration
+    """
+    return {
+        "success": True,
+        "status": "healthy",
+        "service": "mcp-server"
+    }
+
 @mcp.tool
 async def crawl_webpage(url: str) -> Dict[str, Any]:
     """
@@ -257,9 +269,10 @@ def summarize_content(text_content: str, max_length: int = 500) -> Dict[str, Any
         }
 
 async def main():
+    # Start MCP server
     await mcp.run_async(
         transport="http",
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=4200,
         path="/my-custom-path",
         log_level="debug",

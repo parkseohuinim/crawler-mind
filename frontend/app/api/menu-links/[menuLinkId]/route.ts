@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { menuLinkService } from '@/app/_lib/domains/menuLink';
 
-const API_BASE_URL = process.env.MCP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 // GET /api/menu-links/[menuLinkId]
 export async function GET(

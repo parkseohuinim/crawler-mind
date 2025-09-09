@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MCP_CLIENT_URL = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const backendFormData = new FormData();
     backendFormData.append('file', file);
 
-    const response = await fetch(`${MCP_CLIENT_URL}/api/rag/upload`, {
+    const response = await fetch(`${API_BASE_URL}/api/rag/upload`, {
       method: 'POST',
       body: backendFormData,
       // 타임아웃을 30분으로 증가

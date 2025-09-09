@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MCP_CLIENT_URL = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 export async function DELETE(request: NextRequest) {
   try {
-    console.log('RAG Delete API - MCP_CLIENT_URL:', MCP_CLIENT_URL);
-    console.log('RAG Delete API - Full URL:', `${MCP_CLIENT_URL}/api/rag/data`);
+    console.log('RAG Delete API - MCP_CLIENT_URL:', API_BASE_URL);
+    console.log('RAG Delete API - Full URL:', `${API_BASE_URL}/api/rag/data`);
     
-    const response = await fetch(`${MCP_CLIENT_URL}/api/rag/data`, {
+    const response = await fetch(`${API_BASE_URL}/api/rag/data`, {
       method: 'DELETE',
       cache: 'no-cache',
       headers: {

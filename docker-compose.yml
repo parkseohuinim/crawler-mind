@@ -1,0 +1,70 @@
+# WSL 서버용 Docker Compose
+# Docker Hub에서 이미지를 풀하여 실행
+
+services:
+  # Frontend Service (Next.js)
+  frontend:
+    image: crawler-mind-frontend:latest
+    ports:
+      - "3000:3000"   # ✅ 외부로 노출되는 유일한 포트 (Cloudflare Tunnel 연결)
+    environment:
+      - NODE_ENV=production
+      # 브라우저(외부) → 반드시 Cloudflare 도메인으로 호출
+      - NEXT_PUBLIC_API_BASE_URL=https://crawler.alvinpark.xyz/api
+      # 서버사이드(내부) → Docker 네트워크에서 MCP Client 호출
+      - API_BASE_URL=http://mcp-client:8000
+    networks:
+      - app-network
+    depends_on:
+      - mcp-client
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MCP Client Service (FastAPI)
+  mcp-client:
+    image: crawler-mind-mcp-client:latest
+    # ❌ 외부 노출 제거 (ports 삭제)
+    env_file:
+      - .env   # 외부 서비스 연결 정보는 .env 파일에서 불러옴
+    environment:
+      - MCP_SERVER_URL=http://mcp-server:4200/my-custom-path/   # ✅ 내부 네트워크 통신
+      - CORS_ORIGINS=["https://crawler.alvinpark.xyz","http://localhost:3000"]
+      - OPENAI_MODEL=gpt-4o
+    networks:
+      - app-network
+    depends_on:
+      - mcp-server
+    restart: unless-stopped
+    # ❌ healthcheck 제거 또는 수정 (지금은 /health 라우트 없음)
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
+
+  # MCP Server Service (FastMCP)
+  mcp-server:
+    image: crawler-mind-mcp-server:latest
+    # ❌ 외부 노출 제거 (ports 삭제)
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - app-network
+    restart: unless-stopped
+    # ❌ healthcheck 제거 (FastMCP는 기본 /health 엔드포인트 없음)
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:4200/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 60s
+
+networks:
+  app-network:
+    driver: bridge

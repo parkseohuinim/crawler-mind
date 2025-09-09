@@ -101,6 +101,7 @@ interface ModernFormInputProps {
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
+  maxLength?: number;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
   className?: string;
@@ -116,6 +117,7 @@ export function ModernFormInput({
   placeholder,
   required = false,
   disabled = false,
+  maxLength,
   onChange,
   onBlur,
   className = '',
@@ -132,6 +134,7 @@ export function ModernFormInput({
         placeholder={placeholder}
         required={required}
         disabled={disabled}
+        maxLength={maxLength}
         onChange={onChange}
         onBlur={onBlur}
         className={`modern-form-input ${className}`}

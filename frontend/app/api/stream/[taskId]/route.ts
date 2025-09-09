@@ -14,10 +14,10 @@ export async function GET(
       );
     }
 
-    const mcpClientUrl = process.env.MCP_CLIENT_URL || 'http://localhost:8000';
+    const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
     // MCP Client의 SSE 스트림에 연결
-    const response = await fetch(`${mcpClientUrl}/api/stream/${taskId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/stream/${taskId}`, {
       headers: {
         'Accept': 'text/event-stream',
         'Cache-Control': 'no-cache',
