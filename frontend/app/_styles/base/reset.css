@@ -22,7 +22,7 @@ body {
 }
 
 html {
-  font-size: 16px;
+  font-size: 13px; /* FHD 기준으로 더 작게 조정 */
   line-height: 1.5;
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
@@ -125,6 +125,22 @@ fieldset {
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
+}
+
+/* Responsive Font Size Adjustments */
+
+/* QHD 이상 (2560px~) */
+@media (min-width: 2560px) {
+  html {
+    font-size: 14px; /* QHD에서 보수적으로 증가 */
+  }
+}
+
+/* 4K 이상 (3840px~) */
+@media (min-width: 3840px) {
+  html {
+    font-size: 16px; /* 4K에서 보수적으로 증가 */
+  }
 }
 
 ::-webkit-scrollbar-track {

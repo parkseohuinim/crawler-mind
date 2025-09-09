@@ -53,24 +53,25 @@ export default function ModernPagination({
 
   return (
     <div className="modern-pagination-container">
-      <div className="modern-pagination-header">
-        <div className="modern-pagination-title">
-          <div className="modern-pagination-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
+      <div className="modern-pagination-content">
+        <div className="modern-pagination-header">
+          <div className="modern-pagination-title">
+            <div className="modern-pagination-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+            </div>
+            페이지 네비게이션
           </div>
-          페이지 네비게이션
+          <div className="modern-pagination-info">
+            {startItem}-{endItem} / {totalItems}개 항목
+          </div>
         </div>
-        <div className="modern-pagination-info">
-          {startItem}-{endItem} / {totalItems}개 항목
-        </div>
-      </div>
 
-      <div className="modern-pagination-nav">
+        <div className="modern-pagination-nav">
         <button
           className="modern-nav-button"
           onClick={() => onPageChange(currentPage - 1)}
@@ -124,6 +125,7 @@ export default function ModernPagination({
             </select>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

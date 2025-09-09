@@ -53,13 +53,14 @@
 
 @import './_styles/components/json-compare/modern-json-compare.css';
 
-/* Global Layout Styles */
+/* Global Layout Styles - FHD 기준 (더 작게 조정) */
 html,
 body {
   height: 100%;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   margin: 0;
-  padding: 0;
+  padding: 0.75rem; /* FHD 기준 패딩 더 작게 */
+  font-size: 13px; /* FHD 기준 폰트 크기 더 작게 */
   overflow-x: hidden; /* Prevent horizontal scroll */
 }
 
@@ -141,5 +142,25 @@ body {
 @media (prefers-reduced-data: reduce) {
   * {
     background-image: none !important;
+  }
+}
+
+/* Responsive Layout Adjustments */
+
+/* QHD 이상 (2560px~) */
+@media (min-width: 2560px) {
+  html,
+  body {
+    font-size: 14px; /* QHD에서 보수적으로 증가 */
+    padding: 1rem; /* QHD에서 보수적으로 증가 */
+  }
+}
+
+/* 4K 이상 (3840px~) */
+@media (min-width: 3840px) {
+  html,
+  body {
+    font-size: 16px; /* 4K에서 보수적으로 증가 */
+    padding: 1.25rem; /* 4K에서 보수적으로 증가 */
   }
 }

@@ -954,41 +954,65 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  padding: 40px;
+  min-height: 300px;
+  padding: 24px;
   text-align: center;
 }
 
 .modern-no-selection-icon {
-  width: 80px;
-  height: 80px;
+  width: 60px;
+  height: 60px;
   background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%);
-  border-radius: 20px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 24px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
 }
 
 .modern-no-selection-icon svg {
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   color: #a0aec0;
 }
 
 .modern-no-selection-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #2d3748;
-  margin: 0 0 12px 0;
+  margin: 0 0 8px 0;
 }
 
 .modern-no-selection-text {
-  font-size: 14px;
+  font-size: 13px;
   color: #718096;
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.4;
+}
+
+/* FHD 해상도 최적화 */
+@media (min-width: 1920px) and (max-width: 2559px) {
+  .modern-chart-right-panel {
+    min-height: 350px;
+    max-height: 40vh;
+  }
+}
+
+/* QHD 해상도 최적화 */
+@media (min-width: 2560px) and (max-width: 3839px) {
+  .modern-chart-right-panel {
+    min-height: 400px;
+    max-height: 45vh;
+  }
+}
+
+/* 4K 해상도 최적화 */
+@media (min-width: 3840px) {
+  .modern-chart-right-panel {
+    min-height: 450px;
+    max-height: 50vh;
+  }
 }
 
 /* 반응형 디자인 */
