@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { menuLinkService } from '@/app/domains/menuLink';
+import { menuLinkService } from '@/app/_lib/domains/menuLink';
 
 const API_BASE_URL = process.env.MCP_API_URL || 'http://localhost:8000';
 

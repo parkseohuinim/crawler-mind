@@ -1,0 +1,41 @@
+/* 공통 페이지 헤더 스타일 - 모든 메뉴에서 통일된 마진 사용 */
+
+/* ModernPageHeader 컴포넌트용 공통 마진 - 모든 페이지에서 통일 */
+.modern-page-header {
+  margin: var(--header-margin-desktop) !important;
+}
+
+/* 메뉴 트리 페이지 컨텐츠 마진 - 헤더와 동일한 좌우 마진 */
+.menu-tree-page .modern-tree-content {
+  margin: 24px 15vw 40px 15vw !important;
+}
+
+@media (max-width: 1024px) {
+  .modern-page-header {
+    margin: var(--header-margin-tablet) !important;
+  }
+  
+  .menu-tree-page .modern-tree-content {
+    margin: 20px 10vw 30px 10vw !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .modern-page-header {
+    margin: var(--header-margin-mobile) !important;
+  }
+  
+  .menu-tree-page .modern-tree-content {
+    margin: 16px 8vw 20px 8vw !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .modern-page-header {
+    margin: var(--header-margin-small) !important;
+  }
+  
+  .menu-tree-page .modern-tree-content {
+    margin: 12px 5vw 16px 5vw !important;
+  }
+}

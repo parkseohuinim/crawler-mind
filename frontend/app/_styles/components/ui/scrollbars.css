@@ -1,0 +1,116 @@
+/* Scrollbar Styles */
+
+/* 스크롤바 스타일 */
+.messages-container::-webkit-scrollbar,
+.result-links-list::-webkit-scrollbar,
+.menu-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.messages-container::-webkit-scrollbar-track,
+.result-links-list::-webkit-scrollbar-track {
+  background: #1a202c;
+}
+
+.messages-container::-webkit-scrollbar-thumb,
+.result-links-list::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 3px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover,
+.result-links-list::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+.menu-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.menu-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.menu-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.chart-container::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.chart-container::-webkit-scrollbar-track {
+  background: #1a202c;
+  border-radius: 6px;
+}
+
+.chart-container::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 6px;
+  border: 2px solid #1a202c;
+}
+
+.chart-container::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+.chart-container::-webkit-scrollbar-corner {
+  background: #1a202c;
+}
+
+.result-item::-webkit-scrollbar {
+  width: 6px;
+}
+
+.result-item::-webkit-scrollbar-track {
+  background: #1a202c;
+  border-radius: 3px;
+}
+
+.result-item::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 3px;
+}
+
+.result-item::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+.result-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.result-content::-webkit-scrollbar-track {
+  background: #2d3748;
+  border-radius: 3px;
+}
+
+.result-content::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 3px;
+}
+
+.result-content::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+.content-preview::-webkit-scrollbar {
+  width: 4px;
+}
+
+.content-preview::-webkit-scrollbar-track {
+  background: #2d3748;
+  border-radius: 2px;
+}
+
+.content-preview::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 2px;
+}
+
+.content-preview::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}

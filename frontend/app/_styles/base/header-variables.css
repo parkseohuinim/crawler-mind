@@ -1,0 +1,8 @@
+/* 공통 헤더 마진 변수 - 모든 메뉴에서 통일된 마진 사용 */
+
+:root {
+  --header-margin-desktop: 24px 15vw;
+  --header-margin-tablet: 20px 10vw;
+  --header-margin-mobile: 16px 8vw;
+  --header-margin-small: 12px 5vw;
+}

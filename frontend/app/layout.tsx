@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import Navigation from './components/Navigation';
+import Navigation from './_components/ui/Navigation';
 
 export const metadata: Metadata = {
   title: '크롤링 AI 어시스턴트',

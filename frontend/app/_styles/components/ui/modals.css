@@ -1,0 +1,153 @@
+/* Modal Styles */
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  padding: var(--spacing-lg);
+}
+
+.modal {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--border-radius-xl);
+  border: var(--border-width) solid var(--color-border-light);
+  width: 100%;
+  max-width: var(--max-width-4xl);
+  max-height: 95vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-3xl);
+  border-bottom: var(--border-width) solid var(--color-border-light);
+}
+
+.modal-header h2 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xl);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius-base);
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+.modal-close:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.modal-form {
+  padding: var(--spacing-3xl);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-3xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-content {
+  padding: var(--spacing-3xl);
+}
+
+/* Input with Tooltip - 말풍선 스타일 */
+.input-with-tooltip {
+  position: relative;
+}
+
+.input-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: var(--z-tooltip);
+  pointer-events: none;
+}
+
+.tooltip-bubble {
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all var(--duration-slow) var(--ease-out);
+  
+  background: linear-gradient(135deg, var(--color-bg-tertiary) 0%, var(--color-bg-secondary) 100%);
+  color: var(--color-text-secondary);
+  padding: var(--spacing-lg);
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow-lg);
+  border: var(--border-width) solid var(--color-border);
+  margin-top: var(--spacing-sm);
+  
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  max-width: var(--max-width-md);
+  width: 100%;
+}
+
+.tooltip-bubble strong {
+  color: var(--color-accent-primary);
+  display: block;
+  margin-bottom: var(--spacing-xs);
+}
+
+/* 말풍선 꼬리 */
+.tooltip-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: var(--spacing-lg);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid var(--color-bg-tertiary);
+}
+
+/* 입력 필드에 포커스 시에만 툴팁 표시 */
+.input-with-tooltip input:focus + .input-tooltip .tooltip-bubble {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 입력 필드 포커스 스타일 강화 */
+.input-with-tooltip input:focus {
+  border-color: var(--color-border-focus);
+  box-shadow: var(--glow-accent);
+}
+
+/* 모바일에서 툴팁 조정 */
+@media (max-width: 768px) {
+  .tooltip-bubble {
+    max-width: 300px;
+    font-size: var(--font-size-xs);
+    padding: var(--spacing-md);
+  }
+}

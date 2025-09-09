@@ -1,0 +1,443 @@
+/* Animation Utilities */
+
+/* Loading Spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Modern Spin Animation */
+@keyframes modern-spin {
+  0% {
+    transform: rotate(0deg);
+    border-top-color: #4299e1;
+    border-right-color: transparent;
+  }
+  25% {
+    transform: rotate(90deg);
+    border-top-color: #4299e1;
+    border-right-color: #4299e1;
+  }
+  50% {
+    transform: rotate(180deg);
+    border-top-color: transparent;
+    border-right-color: #4299e1;
+  }
+  75% {
+    transform: rotate(270deg);
+    border-top-color: #4299e1;
+    border-right-color: #4299e1;
+  }
+  100% {
+    transform: rotate(360deg);
+    border-top-color: #4299e1;
+    border-right-color: transparent;
+  }
+}
+
+/* Pulse Glow Animation */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(66, 153, 225, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(66, 153, 225, 0.5);
+  }
+}
+
+/* Dots Bounce Animation */
+@keyframes dots-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Loading Bounce Animation */
+@keyframes loading-bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+/* Node Slide In Animation */
+@keyframes nodeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Edge Draw In Animation */
+@keyframes edgeDrawIn {
+  from {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+    opacity: 0;
+  }
+  to {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 0;
+    opacity: 0.6;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bounce {
+  0%, 20%, 53%, 80%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  40%, 43% {
+    transform: translate3d(0, -30px, 0);
+  }
+  70% {
+    transform: translate3d(0, -15px, 0);
+  }
+  90% {
+    transform: translate3d(0, -4px, 0);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-10px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(10px);
+  }
+}
+
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 5px var(--color-accent-primary);
+  }
+  50% {
+    box-shadow: 0 0 20px var(--color-accent-primary), 0 0 30px var(--color-accent-primary);
+  }
+  100% {
+    box-shadow: 0 0 5px var(--color-accent-primary);
+  }
+}
+
+/* Animation Classes */
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+
+.animate-shake {
+  animation: shake 0.82s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite alternate;
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--duration-base) var(--ease-out) forwards;
+}
+
+.animate-fade-out {
+  animation: fadeOut var(--duration-base) var(--ease-in) forwards;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp var(--duration-slow) var(--ease-out) forwards;
+}
+
+.animate-slide-in-down {
+  animation: slideInDown var(--duration-slow) var(--ease-out) forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft var(--duration-slow) var(--ease-out) forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight var(--duration-slow) var(--ease-out) forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn var(--duration-base) var(--ease-out) forwards;
+}
+
+/* Transition Utilities */
+.transition-all {
+  transition: all var(--duration-base) var(--ease-in-out);
+}
+
+.transition-colors {
+  transition: color var(--duration-base) var(--ease-in-out),
+              background-color var(--duration-base) var(--ease-in-out),
+              border-color var(--duration-base) var(--ease-in-out);
+}
+
+.transition-opacity {
+  transition: opacity var(--duration-base) var(--ease-in-out);
+}
+
+.transition-transform {
+  transition: transform var(--duration-base) var(--ease-in-out);
+}
+
+.transition-shadow {
+  transition: box-shadow var(--duration-base) var(--ease-in-out);
+}
+
+/* Hover Effects */
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+.hover-scale:hover {
+  transform: scale(1.05);
+}
+
+.hover-glow:hover {
+  box-shadow: var(--glow-accent);
+}
+
+/* Loading States */
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-bg-quaternary);
+  border-top: 2px solid var(--color-accent-primary);
+  border-radius: var(--border-radius-full);
+  animation: spin 1s linear infinite;
+}
+
+.loading-spinner-lg {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-bg-quaternary);
+  border-top: 3px solid var(--color-accent-primary);
+  border-radius: var(--border-radius-full);
+  animation: spin 1s linear infinite;
+}
+
+.loading-dots {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+}
+
+.loading-dots span {
+  width: 6px;
+  height: 6px;
+  background-color: var(--color-accent-primary);
+  border-radius: var(--border-radius-full);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+/* Progress Animation */
+@keyframes progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.progress-shimmer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  animation: progress 1.5s infinite;
+}
+
+/* Tree Node Animations */
+@keyframes nodeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes edgeDrawIn {
+  from {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+  }
+  to {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Tree Animation Classes */
+.tree-node-rect {
+  animation: nodeSlideIn 0.6s ease-out forwards;
+}
+
+.tree-edge {
+  animation: edgeDrawIn 0.8s ease-out forwards;
+}
+
+.tree-node-rect:nth-child(1) { animation-delay: 0.1s; }
+.tree-node-rect:nth-child(2) { animation-delay: 0.2s; }
+.tree-node-rect:nth-child(3) { animation-delay: 0.3s; }
+.tree-node-rect:nth-child(4) { animation-delay: 0.4s; }
+.tree-node-rect:nth-child(5) { animation-delay: 0.5s; }
+
+/* Ripple Effect */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ripple-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-effect::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.ripple-effect:active::before {
+  width: 300px;
+  height: 300px;
+}

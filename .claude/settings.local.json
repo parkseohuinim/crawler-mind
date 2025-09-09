@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(cp:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm run build:*)",
+      "Bash(find:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npx tsc:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": false
+}

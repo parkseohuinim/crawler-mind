@@ -1,0 +1,303 @@
+/* Advanced Interactive States and Pseudo-Elements */
+
+/* Text Selection Styling */
+::selection {
+  background-color: rgba(66, 153, 225, 0.3);
+  color: #ffffff;
+}
+
+::-moz-selection {
+  background-color: rgba(66, 153, 225, 0.3);
+  color: #ffffff;
+}
+
+/* Focus Within Management */
+.search-container:focus-within {
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.2);
+  border-color: #4299e1;
+}
+
+.form-group:focus-within .form-label {
+  color: #4299e1;
+  transform: translateY(-2px);
+}
+
+/* Complex Pseudo-Class Combinations */
+.btn:hover:not(:disabled):not(.loading) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(66, 153, 225, 0.25);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(66, 153, 225, 0.2);
+}
+
+/* Alternating Row Styles */
+.result-item:nth-child(odd) {
+  background-color: rgba(26, 32, 44, 0.3);
+}
+
+.result-item:nth-child(even) {
+  background-color: rgba(45, 55, 72, 0.2);
+}
+
+.tree-node:nth-child(odd) .tree-node-content {
+  border-left: 2px solid rgba(66, 153, 225, 0.2);
+}
+
+.tree-node:nth-child(even) .tree-node-content {
+  border-left: 2px solid rgba(102, 126, 234, 0.2);
+}
+
+/* Advanced Pseudo-Elements for Icons and Decorations */
+.empty-state::before {
+  content: "";
+  display: block;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 1rem;
+  background-image: url("data:image/svg+xml,%3Csvg width='48' height='48' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z' stroke='%234299e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  opacity: 0.4;
+}
+
+.tooltip-bubble::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid #2d3748;
+  z-index: 1001;
+}
+
+.info-subitem::before {
+  content: "→";
+  color: #4299e1;
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.legend-item::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: currentColor;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+
+/* Status Indicator Pseudo-Elements */
+.status-success::before {
+  content: "✓";
+  color: #68d391;
+  font-weight: bold;
+  margin-right: 0.25rem;
+}
+
+.status-error::before {
+  content: "✗";
+  color: #fc8181;
+  font-weight: bold;
+  margin-right: 0.25rem;
+}
+
+.status-warning::before {
+  content: "!";
+  color: #f6e05e;
+  font-weight: bold;
+  margin-right: 0.25rem;
+}
+
+.status-pending::before {
+  content: "◯";
+  color: #a0aec0;
+  margin-right: 0.25rem;
+}
+
+/* Menu Item Arrows */
+.menu-item.has-submenu::after {
+  content: "▶";
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #a0aec0;
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+}
+
+.menu-item.has-submenu.expanded::after {
+  transform: translateY(-50%) rotate(90deg);
+  color: #4299e1;
+}
+
+/* Loading Dots */
+.loading-dots::before,
+.loading-dots::after {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #4299e1;
+  margin: 0 2px;
+  animation: loading-dots 1.4s infinite ease-in-out both;
+}
+
+.loading-dots::before {
+  animation-delay: -0.32s;
+}
+
+.loading-dots::after {
+  animation-delay: -0.16s;
+}
+
+@keyframes loading-dots {
+  0%, 80%, 100% {
+    transform: scale(0);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Advanced Hover Effects */
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 
+    0 20px 25px -5px rgba(0, 0, 0, 0.2),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04),
+    0 0 0 1px rgba(66, 153, 225, 0.05);
+}
+
+.button-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.button-ripple::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.button-ripple:active::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Link Hover States */
+.link-hover {
+  position: relative;
+  color: #4299e1;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.link-hover::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  bottom: -2px;
+  left: 0;
+  background: linear-gradient(90deg, #4299e1, #63b3ed);
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 0.3s ease;
+}
+
+.link-hover:hover {
+  color: #63b3ed;
+}
+
+.link-hover:hover::after {
+  transform: scaleX(1);
+  transform-origin: bottom left;
+}
+
+/* Advanced Table Row Interactions */
+.table-row:hover {
+  background: linear-gradient(90deg, rgba(66, 153, 225, 0.05), rgba(66, 153, 225, 0.02));
+  border-left: 3px solid #4299e1;
+}
+
+.table-row:hover .table-cell {
+  color: #e2e8f0;
+}
+
+.table-row.selected {
+  background: linear-gradient(90deg, rgba(66, 153, 225, 0.1), rgba(66, 153, 225, 0.05));
+  border-left: 4px solid #4299e1;
+}
+
+/* Form Input Enhancement */
+.form-input:focus {
+  box-shadow: 
+    0 0 0 3px rgba(66, 153, 225, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 0 0 1px #4299e1;
+  border-color: transparent;
+}
+
+.form-input:focus + .form-label {
+  color: #4299e1;
+  transform: translateY(-0.5rem) scale(0.9);
+}
+
+/* Disabled States */
+.disabled,
+[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.disabled::before,
+[disabled]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.1),
+    rgba(0, 0, 0, 0.1) 1px,
+    transparent 1px,
+    transparent 6px
+  );
+  pointer-events: none;
+}
+
+/* Advanced Animation Delays */
+.tree-node-rect:nth-child(1) { animation-delay: 0.1s; }
+.tree-node-rect:nth-child(2) { animation-delay: 0.2s; }
+.tree-node-rect:nth-child(3) { animation-delay: 0.3s; }
+.tree-node-rect:nth-child(4) { animation-delay: 0.4s; }
+.tree-node-rect:nth-child(5) { animation-delay: 0.5s; }
+
+.fade-in-item:nth-child(odd) {
+  animation: fadeInUp 0.6s ease forwards;
+  animation-delay: calc(var(--i, 0) * 0.1s);
+}
+
+.fade-in-item:nth-child(even) {
+  animation: fadeInUp 0.6s ease forwards;
+  animation-delay: calc(var(--i, 0) * 0.1s + 0.05s);
+}

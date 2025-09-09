@@ -1,0 +1,425 @@
+/* 모던한 페이지네이션 스타일 - 검색창 톤앤매너에 맞춤 */
+
+/* 페이지네이션 컨테이너 */
+.modern-pagination-container {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border-radius: 20px;
+  padding: 24px;
+  margin: 24px 15vw;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 1024px) {
+  .modern-pagination-container {
+    margin: 20px 10vw;
+  }
+}
+
+@media (max-width: 768px) {
+  .modern-pagination-container {
+    margin: 16px 8vw;
+  }
+}
+
+@media (max-width: 480px) {
+  .modern-pagination-container {
+    margin: 12px 5vw;
+  }
+}
+
+.modern-pagination-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  pointer-events: none;
+}
+
+/* 페이지네이션 헤더 */
+.modern-pagination-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  position: relative;
+  z-index: 1;
+}
+
+.modern-pagination-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #2d3748;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.modern-pagination-icon {
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.modern-pagination-icon svg {
+  width: 14px;
+  height: 14px;
+  color: white;
+}
+
+.modern-pagination-info {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+/* 페이지네이션 네비게이션 */
+.modern-pagination-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+/* 페이지 버튼들 */
+.modern-pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: white;
+  padding: 8px;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+}
+
+.modern-page-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #4a5568;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.modern-page-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  border-radius: 12px;
+}
+
+.modern-page-button:hover::before {
+  opacity: 0.1;
+}
+
+.modern-page-button:hover {
+  color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.2);
+}
+
+.modern-page-button.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
+}
+
+.modern-page-button.active::before {
+  opacity: 0;
+}
+
+.modern-page-button.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 네비게이션 화살표 */
+.modern-nav-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: white;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.modern-nav-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  border-radius: 12px;
+}
+
+.modern-nav-button:hover::before {
+  opacity: 0.1;
+}
+
+.modern-nav-button:hover {
+  color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+}
+
+.modern-nav-button.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.modern-nav-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 점점점 표시 */
+.modern-ellipsis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: #a0aec0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* 페이지 크기 선택 */
+.modern-page-size {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  padding: 8px 16px;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  margin-left: 16px;
+}
+
+.modern-page-size-label {
+  color: #4a5568;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.modern-page-size-select {
+  border: none;
+  background: transparent;
+  color: #667eea;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.modern-page-size-select:hover {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+/* 반응형 디자인 */
+@media (max-width: 1024px) {
+  .modern-pagination-container {
+    padding: 20px;
+    margin: 20px 0;
+  }
+  
+  .modern-pagination-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .modern-pagination-nav {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  
+  .modern-page-size {
+    margin-left: 0;
+    margin-top: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .modern-pagination-container {
+    padding: 16px;
+    margin: 16px 0;
+    border-radius: 16px;
+  }
+  
+  .modern-pagination-title {
+    font-size: 16px;
+  }
+  
+  .modern-pagination-pages {
+    padding: 6px;
+    gap: 2px;
+  }
+  
+  .modern-page-button,
+  .modern-nav-button {
+    width: 36px;
+    height: 36px;
+    font-size: 13px;
+  }
+  
+  .modern-page-size {
+    padding: 6px 12px;
+  }
+  
+  .modern-page-size-label,
+  .modern-page-size-select {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modern-pagination-container {
+    padding: 12px;
+    margin: 12px 0;
+  }
+  
+  .modern-pagination-nav {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .modern-pagination-pages {
+    order: 2;
+  }
+  
+  .modern-page-size {
+    order: 1;
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+  
+  .modern-page-button,
+  .modern-nav-button {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+}
+
+/* 다크 모드 지원 */
+@media (prefers-color-scheme: dark) {
+  .modern-pagination-container {
+    background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+  }
+  
+  .modern-pagination-title {
+    color: #e2e8f0;
+  }
+  
+  .modern-pagination-pages,
+  .modern-nav-button,
+  .modern-page-size {
+    background: #1a202c;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+  
+  .modern-page-button {
+    color: #e2e8f0;
+  }
+  
+  .modern-page-size-label {
+    color: #e2e8f0;
+  }
+  
+  .modern-page-size-select {
+    color: #667eea;
+  }
+  
+  .modern-ellipsis {
+    color: #718096;
+  }
+}
+
+/* 애니메이션 효과 */
+.modern-pagination-container {
+  animation: slideInFromBottom 0.6s ease-out;
+}
+
+.modern-page-button,
+.modern-nav-button {
+  animation: fadeInButton 0.4s ease-out;
+  animation-fill-mode: both;
+}
+
+.modern-page-button:nth-child(1) { animation-delay: 0.1s; }
+.modern-page-button:nth-child(2) { animation-delay: 0.2s; }
+.modern-page-button:nth-child(3) { animation-delay: 0.3s; }
+.modern-page-button:nth-child(4) { animation-delay: 0.4s; }
+.modern-page-button:nth-child(5) { animation-delay: 0.5s; }
+
+@keyframes fadeInButton {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 호버 효과 개선 */
+.modern-page-button:hover,
+.modern-nav-button:hover {
+  z-index: 1;
+}
+
+.modern-page-button.active {
+  z-index: 2;
+}

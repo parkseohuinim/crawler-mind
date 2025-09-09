@@ -1,0 +1,338 @@
+/* 모던한 모달 스타일 - 검색창 톤앤매너에 맞춤 */
+
+/* 모달 오버레이 */
+.modern-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 모달 컨테이너 */
+.modern-modal-container {
+  background: white;
+  border-radius: 24px;
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.2);
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  position: relative;
+  animation: slideInFromBottom 0.4s ease-out;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@keyframes slideInFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(50px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 모달 헤더 */
+.modern-modal-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 24px 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+.modern-modal-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  pointer-events: none;
+}
+
+.modern-modal-title-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  z-index: 1;
+}
+
+.modern-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: white;
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.modern-modal-icon {
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+}
+
+.modern-modal-icon svg {
+  width: 14px;
+  height: 14px;
+  color: white;
+}
+
+.modern-modal-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.modern-modal-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.modern-modal-close:active {
+  transform: scale(0.95);
+}
+
+.modern-modal-close svg {
+  width: 16px;
+  height: 16px;
+  color: white;
+}
+
+/* 모달 바디 */
+.modern-modal-body {
+  padding: 32px;
+  max-height: 60vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.modern-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modern-modal-body::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.modern-modal-body::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 3px;
+}
+
+.modern-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* 모달 푸터 */
+.modern-modal-footer {
+  padding: 24px 32px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+  .modern-modal-overlay {
+    padding: 16px;
+  }
+  
+  .modern-modal-container {
+    max-width: 100%;
+    border-radius: 20px;
+  }
+  
+  .modern-modal-header {
+    padding: 20px 24px;
+  }
+  
+  .modern-modal-title {
+    font-size: 18px;
+  }
+  
+  .modern-modal-body {
+    padding: 24px;
+    max-height: 70vh;
+  }
+  
+  .modern-modal-footer {
+    padding: 20px 24px;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modern-modal-overlay {
+    padding: 12px;
+  }
+  
+  .modern-modal-container {
+    border-radius: 16px;
+  }
+  
+  .modern-modal-header {
+    padding: 16px 20px;
+  }
+  
+  .modern-modal-title {
+    font-size: 16px;
+  }
+  
+  .modern-modal-body {
+    padding: 20px;
+  }
+  
+  .modern-modal-footer {
+    padding: 16px 20px;
+  }
+}
+
+/* 다크 모드 지원 */
+@media (prefers-color-scheme: dark) {
+  .modern-modal-container {
+    background: #1a202c;
+    border-color: #4a5568;
+  }
+  
+  .modern-modal-body {
+    background: #1a202c;
+  }
+  
+  .modern-modal-footer {
+    background: #2d3748;
+    border-top-color: #4a5568;
+  }
+  
+  .modern-modal-body::-webkit-scrollbar-track {
+    background: #2d3748;
+  }
+  
+  .modern-modal-body::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+  
+  .modern-modal-body::-webkit-scrollbar-thumb:hover {
+    background: #718096;
+  }
+}
+
+/* 애니메이션 효과 */
+.modern-modal-container {
+  animation: modalSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(50px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 모달 닫기 애니메이션 */
+.modern-modal-overlay.closing .modern-modal-container {
+  animation: modalSlideOut 0.3s ease-in;
+}
+
+@keyframes modalSlideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(50px) scale(0.9);
+  }
+}
+
+/* 포커스 트랩 */
+.modern-modal-container:focus {
+  outline: none;
+}
+
+/* 접근성 개선 */
+.modern-modal-overlay[aria-hidden="true"] {
+  display: none;
+}
+
+/* 모달 크기 변형 */
+.modern-modal-container.small {
+  max-width: 400px;
+}
+
+.modern-modal-container.large {
+  max-width: 800px;
+}
+
+.modern-modal-container.extra-large {
+  max-width: 1000px;
+}
+
+/* 전체 화면 모달 */
+.modern-modal-container.fullscreen {
+  max-width: 100vw;
+  max-height: 100vh;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+}
+
+.modern-modal-container.fullscreen .modern-modal-body {
+  max-height: calc(100vh - 120px);
+}
+
+/* 모달 스택 효과 */
+.modern-modal-overlay:nth-of-type(2) .modern-modal-container {
+  transform: scale(0.95);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+}
+
+.modern-modal-overlay:nth-of-type(3) .modern-modal-container {
+  transform: scale(0.9);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
