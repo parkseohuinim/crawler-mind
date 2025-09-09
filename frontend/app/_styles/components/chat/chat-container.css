@@ -4,7 +4,7 @@
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: auto;
   max-width: var(--max-width-3xl);
   margin: 0 auto;
   background: rgba(255, 255, 255, 0.9);
@@ -153,7 +153,7 @@
 /* Responsive Design */
 @media (max-width: 768px) {
   .chat-container {
-    height: 100vh;
+    height: auto;
     max-width: 100%;
     border-left: none;
     border-right: none;

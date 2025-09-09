@@ -11,10 +11,19 @@
   overflow: hidden;
 }
 
+/* JSON 비교 페이지에서 사용되는 테이블은 마진 없음 */
+.modern-json-compare-page .modern-table-container {
+  margin: 24px 0;
+}
+
 /* 반응형 디자인 */
 @media (max-width: 1024px) {
   .modern-table-container {
     margin: 20px 10vw;
+  }
+  
+  .modern-json-compare-page .modern-table-container {
+    margin: 20px 0;
   }
 }
 
@@ -22,11 +31,19 @@
   .modern-table-container {
     margin: 16px 8vw;
   }
+  
+  .modern-json-compare-page .modern-table-container {
+    margin: 16px 0;
+  }
 }
 
 @media (max-width: 480px) {
   .modern-table-container {
     margin: 12px 5vw;
+  }
+  
+  .modern-json-compare-page .modern-table-container {
+    margin: 12px 0;
   }
 }
 
@@ -323,6 +340,10 @@
 @media (max-width: 1024px) {
   .modern-table-container {
     padding: 20px;
+    margin: 20px 10vw;
+  }
+  
+  .modern-json-compare-page .modern-table-container {
     margin: 20px 0;
   }
   
@@ -343,8 +364,12 @@
 @media (max-width: 768px) {
   .modern-table-container {
     padding: 16px;
-    margin: 16px 0;
+    margin: 16px 8vw;
     border-radius: 16px;
+  }
+  
+  .modern-json-compare-page .modern-table-container {
+    margin: 16px 0;
   }
   
   .modern-table-header {
@@ -381,6 +406,10 @@
 @media (max-width: 480px) {
   .modern-table-container {
     padding: 12px;
+    margin: 12px 5vw;
+  }
+  
+  .modern-json-compare-page .modern-table-container {
     margin: 12px 0;
   }
   

@@ -2,7 +2,7 @@
 
 /* 메인 컨테이너 */
 .modern-json-compare-page {
-  min-height: 100vh;
+  min-height: auto;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   color: var(--color-text-primary);
   padding: 0;
@@ -298,6 +298,30 @@
   border: none;
   min-width: 160px;
   justify-content: center;
+}
+
+/* 담당자 정보 셀 스타일링 */
+.manager-cell {
+  min-width: 300px !important;
+  width: 300px !important;
+}
+
+.manager-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.manager-info .team-name,
+.manager-info .manager-names {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.manager-info strong {
+  color: #2d3748;
+  font-weight: 600;
 }
 
 .modern-primary-button {

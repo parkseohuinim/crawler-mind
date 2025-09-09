@@ -340,6 +340,34 @@
   }
 }
 
+/* 1080p Display Scaling - Scale down for better readability */
+@media screen and (max-width: 1920px) and (min-width: 1600px) {
+  body {
+    transform: scale(0.9);
+    transform-origin: top left;
+    width: calc(100% / 0.9);
+    height: calc(100% / 0.9);
+  }
+}
+
+@media screen and (max-width: 1599px) and (min-width: 1366px) {
+  body {
+    transform: scale(0.85);
+    transform-origin: top left;
+    width: calc(100% / 0.85);
+    height: calc(100% / 0.85);
+  }
+}
+
+@media screen and (max-width: 1365px) and (min-width: 1280px) {
+  body {
+    transform: scale(0.8);
+    transform-origin: top left;
+    width: calc(100% / 0.8);
+    height: calc(100% / 0.8);
+  }
+}
+
 /* Ultra Wide Displays */
 @media screen and (min-width: 1920px) {
   .container-ultra {

@@ -40,7 +40,7 @@
   z-index: 1;
   border: 1px solid var(--color-border-light);
   min-height: 70vh;
-  max-height: 85vh;
+  max-height: none;
 }
 
 /* RAG 헤더는 이제 .modern-page-header 사용 */
@@ -136,7 +136,7 @@
 /* 탭 컨텐츠 */
 .modern-tab-content {
   padding: 32px;
-  min-height: 600px;
+  min-height: auto;
   position: relative;
   z-index: 1;
   background: white;
@@ -260,8 +260,9 @@
   border-radius: 16px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
-  height: 80vh;
-  min-height: 600px;
+  height: 70vh;
+  min-height: 500px;
+  max-height: 80vh;
   display: flex;
   flex-direction: column;
 }
@@ -1783,7 +1784,7 @@
     width: calc(100% - 20vw);
     margin: 20px auto 30px auto;
     min-height: 65vh;
-    max-height: 80vh;
+    max-height: none;
   }
   
   .modern-tab-content {
@@ -1800,7 +1801,7 @@
     width: calc(100% - 16vw);
     margin: 16px auto 20px auto;
     min-height: 60vh;
-    max-height: 75vh;
+    max-height: none;
   }
   
   .modern-tab-navigation {
@@ -1866,7 +1867,7 @@
     width: calc(100% - 12vw);
     margin: 12px auto 16px auto;
     min-height: 55vh;
-    max-height: 70vh;
+    max-height: none;
   }
   
   .modern-tab-button {
@@ -1879,7 +1880,7 @@
   }
   
   .modern-rag-chat {
-    height: 70vh;
+    height: auto;
     min-height: 500px;
   }
   

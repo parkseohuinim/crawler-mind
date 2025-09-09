@@ -220,7 +220,7 @@
   z-index: 1;
   border: 1px solid var(--color-border-light);
   min-height: 70vh;
-  max-height: 85vh;
+  max-height: none;
 }
 
 /* 트리 컨텐츠 */
@@ -676,7 +676,7 @@
   display: flex;
   flex-direction: column;
   min-height: 600px;
-  max-height: 800px;
+  max-height: 60vh;
 }
 
 .modern-chart-details {
@@ -1001,7 +1001,7 @@
   
   .modern-chart-right-panel {
     min-height: 500px;
-    max-height: 650px;
+    max-height: none;
   }
 }
 
@@ -1040,7 +1040,7 @@
   
   .modern-chart-right-panel {
     min-height: 450px;
-    max-height: 550px;
+    max-height: none;
   }
 }
 
@@ -1082,7 +1082,7 @@
   
   .modern-chart-right-panel {
     min-height: 400px;
-    max-height: 500px;
+    max-height: none;
   }
 }
 
@@ -1131,12 +1131,12 @@
     width: calc(100% - 8vw);
     margin: 20px auto 30px auto;
     min-height: 65vh;
-    max-height: 80vh;
+    max-height: none;
   }
   
   .menu-tree-page .modern-tree-content {
     min-height: 65vh;
-    max-height: 80vh;
+    max-height: none;
   }
 }
 
@@ -1150,12 +1150,12 @@
     width: calc(100% - 6vw);
     margin: 16px auto 20px auto;
     min-height: 60vh;
-    max-height: 75vh;
+    max-height: none;
   }
   
   .menu-tree-page .modern-tree-content {
     min-height: 60vh;
-    max-height: 75vh;
+    max-height: none;
   }
 }
 
@@ -1169,11 +1169,11 @@
     width: calc(100% - 4vw);
     margin: 12px auto 16px auto;
     min-height: 55vh;
-    max-height: 70vh;
+    max-height: none;
   }
   
   .menu-tree-page .modern-tree-content {
     min-height: 55vh;
-    max-height: 70vh;
+    max-height: none;
   }
 }
