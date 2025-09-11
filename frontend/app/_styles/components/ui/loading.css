@@ -288,10 +288,10 @@
 .progress-container {
   margin-top: var(--spacing-md);
   padding: var(--spacing-md);
-  background: linear-gradient(135deg, rgba(26, 32, 44, 0.6) 0%, rgba(15, 20, 25, 0.6) 100%);
+  background: var(--color-bg-secondary);
   border-radius: var(--border-radius-lg);
-  border: var(--border-width) solid rgba(74, 85, 104, 0.3);
-  backdrop-filter: blur(10px);
+  border: var(--border-width) solid var(--color-border-light);
+  box-shadow: var(--shadow-xs);
 }
 
 .progress-step {
@@ -312,26 +312,26 @@
 
 .progress-step.completed {
   color: var(--color-success);
-  background: rgba(72, 187, 120, 0.1);
-  border-left: 3px solid var(--color-success);
+  background: var(--color-success-bg);
+  border-left: 3px solid var(--color-success-hover);
 }
 
 .progress-step.active {
   color: var(--color-info);
-  background: rgba(66, 153, 225, 0.1);
-  border-left: 3px solid var(--color-info);
+  background: var(--color-info-bg);
+  border-left: 3px solid var(--color-accent-primary);
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
 .progress-step.error {
   color: var(--color-error);
-  background: rgba(245, 101, 101, 0.1);
-  border-left: 3px solid var(--color-error);
+  background: var(--color-error-bg);
+  border-left: 3px solid var(--color-error-hover);
 }
 
 .progress-step.pending {
   color: var(--color-text-disabled);
-  background: rgba(160, 174, 192, 0.05);
+  background: rgba(160, 174, 192, 0.08);
   border-left: 3px solid var(--color-border);
 }
 

@@ -70,10 +70,10 @@
 .progress-container {
   margin-top: 0.75rem;
   padding: 0.75rem;
-  background: linear-gradient(135deg, rgba(26, 32, 44, 0.6) 0%, rgba(15, 20, 25, 0.6) 100%);
+  background: var(--color-bg-secondary);
   border-radius: 0.5rem;
-  border: 1px solid rgba(74, 85, 104, 0.3);
-  backdrop-filter: blur(10px);
+  border: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-xs);
 }
 
 .progress-step {
@@ -93,28 +93,28 @@
 }
 
 .progress-step.completed {
-  color: #68d391;
-  background: rgba(72, 187, 120, 0.1);
-  border-left: 3px solid #48bb78;
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border-left: 3px solid var(--color-success-hover);
 }
 
 .progress-step.active {
-  color: #63b3ed;
-  background: rgba(66, 153, 225, 0.1);
-  border-left: 3px solid #4299e1;
+  color: var(--color-info);
+  background: var(--color-info-bg);
+  border-left: 3px solid var(--color-accent-primary);
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
 .progress-step.error {
-  color: #fc8181;
-  background: rgba(245, 101, 101, 0.1);
-  border-left: 3px solid #e53e3e;
+  color: var(--color-error);
+  background: var(--color-error-bg);
+  border-left: 3px solid var(--color-error-hover);
 }
 
 .progress-step.pending {
-  color: #cbd5e0;
-  background: rgba(160, 174, 192, 0.05);
-  border-left: 3px solid #718096;
+  color: var(--color-text-disabled);
+  background: rgba(160, 174, 192, 0.08);
+  border-left: 3px solid var(--color-border);
 }
 
 .progress-icon {
@@ -130,15 +130,16 @@
 .result-container {
   margin-top: 1rem;
   padding: 1rem;
-  background-color: #1a202c;
+  background: var(--color-bg-secondary);
   border-radius: 0.5rem;
-  border: 1px solid #2d3748;
+  border: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-sm);
 }
 
 .result-title {
   font-size: 1rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--color-text-primary);
   margin-bottom: 0.75rem;
 }
 
@@ -147,7 +148,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #2d3748;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .result-item:last-child {
@@ -156,12 +157,12 @@
 
 .result-label {
   font-size: 0.875rem;
-  color: #a0aec0;
+  color: var(--color-text-muted);
 }
 
 .result-value {
   font-size: 0.875rem;
-  color: #e2e8f0;
+  color: var(--color-text-secondary);
   font-weight: 500;
 }
 
@@ -171,21 +172,22 @@
 
 .result-links-title {
   font-size: 0.875rem;
-  color: #a0aec0;
+  color: var(--color-text-muted);
   margin-bottom: 0.5rem;
 }
 
 .result-links-list {
   max-height: 200px;
   overflow-y: auto;
-  background-color: #0f1419;
+  background: var(--color-bg-tertiary);
   border-radius: 0.25rem;
   padding: 0.5rem;
+  border: 1px solid var(--color-border-light);
 }
 
 .result-link {
   display: block;
-  color: #4299e1;
+  color: var(--color-accent-primary);
   text-decoration: none;
   font-size: 0.75rem;
   padding: 0.25rem 0;
@@ -193,8 +195,10 @@
 }
 
 .result-link:hover {
-  color: #63b3ed;
-  text-decoration: underline;
+  color: var(--color-accent-hover);
+  background: rgba(225, 48, 108, 0.06);
+  border-radius: 0.25rem;
+  text-decoration: none;
 }
 
 .message.user {
