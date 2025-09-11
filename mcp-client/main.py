@@ -8,7 +8,6 @@ from app.config import settings
 from app.core.logging import setup_logging
 from app.infrastructure.mcp.mcp_service import mcp_service
 from app.routers.api import router as api_router
-from app.presentation.api.menu.menu_router import router as menu_router
 from app.shared.database.base import init_database, close_database
 from app.application.rag.rag_service import rag_service
 
@@ -88,8 +87,7 @@ async def health_check():
     return {"status": "healthy", "service": "mcp-client"}
 
 # Include routers
-app.include_router(api_router, prefix="/api")  # Keep existing API for backward compatibility
-app.include_router(menu_router)  # New DDD-based menu API
+app.include_router(api_router, prefix="/api")
 
 # Development server
 if __name__ == "__main__":

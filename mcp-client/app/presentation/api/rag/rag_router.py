@@ -211,61 +211,6 @@ async def get_rag_data_info():
         )
 
 
-@router.get("/search-test/{query}")
-async def search_test(query: str):
-    """특정 쿼리로 검색 테스트"""
-    try:
-        qdrant_service, opensearch_service = rag_service._get_services()
-        
-        # Qdrant 검색
-        vector_results = await qdrant_service.search_similar_documents(
-            query=query,
-            limit=10,
-            score_threshold=0.0
-        )
-        
-        # OpenSearch 검색
-        text_results = await opensearch_service.search_documents(
-            query=query,
-            limit=10
-        )
-        
-        # 홈코노미 관련 문서 찾기
-        homeco_results = []
-        for result in vector_results + text_results:
-            if 'payload' in result:
-                content = result['payload'].get('content', '')
-                title = result['payload'].get('title', '')
-            elif 'source' in result:
-                content = result['source'].get('content', '')
-                title = result['source'].get('title', '')
-            else:
-                continue
-                
-            if '홈코노미' in title or '홈코노미' in content:
-                homeco_results.append({
-                    'id': result.get('id'),
-                    'title': title,
-                    'content_preview': content[:200] + '...' if len(content) > 200 else content
-                })
-        
-        return {
-            "query": query,
-            "vector_results_count": len(vector_results),
-            "text_results_count": len(text_results),
-            "homeco_results": homeco_results,
-            "all_results": [
-                {
-                    'id': r.get('id'),
-                    'title': r.get('payload', {}).get('title') or r.get('source', {}).get('title'),
-                    'score': r.get('score', 0)
-                } for r in (vector_results + text_results)[:5]
-            ]
-        }
-        
-    except Exception as e:
-        logger.error(f"Search test failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/search")
@@ -364,43 +309,3 @@ async def search_documents(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/health")
-async def health_check():
-    """Health check endpoint for RAG services"""
-    try:
-        # Test actual connections
-        qdrant_status = "disconnected"
-        opensearch_status = "disconnected"
-        
-        try:
-            # Test Qdrant connection (using HTTP client)
-            qdrant_service, opensearch_service = rag_service._get_services()
-            response = await qdrant_service.client.get(f"{qdrant_service.base_url}/collections")
-            response.raise_for_status()
-            qdrant_status = "connected"
-        except Exception as e:
-            logger.warning(f"Qdrant health check failed: {e}")
-        
-        try:
-            # Test OpenSearch connection
-            health = opensearch_service.client.cluster.health()
-            opensearch_status = "connected"
-        except Exception as e:
-            logger.warning(f"OpenSearch health check failed: {e}")
-        
-        overall_status = "healthy" if qdrant_status == "connected" and opensearch_status == "connected" else "degraded"
-        
-        return {
-            "status": overall_status,
-            "services": {
-                "qdrant": qdrant_status,
-                "opensearch": opensearch_status,
-                "llm": "available"
-            }
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="RAG services are not healthy"
-        )

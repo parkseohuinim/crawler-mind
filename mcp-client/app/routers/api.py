@@ -5,13 +5,10 @@ import logging
 import math
 
 from app.models import (
-    QueryRequest, QueryResponse, ToolsResponse, HealthResponse,
     ProcessUrlRequest, TaskResponse, TaskResult, CrawlingResult
 )
 from app.infrastructure.mcp.mcp_service import mcp_service
-from app.infrastructure.llm.llm_service import llm_service  
 from app.application.crawler.crawler_service import crawler_service
-from app.shared.exceptions.base import MCPConnectionError, LLMQueryError
 from app.shared.database.base import get_database_session
 from app.application.menu.menu_service import MenuApplicationService
 from app.presentation.api.rag.rag_router import router as rag_router
@@ -28,131 +25,11 @@ async def get_menu_service(db: AsyncSession = Depends(get_database_session)) -> 
     """Dependency to get menu application service"""
     return MenuApplicationService(db)
 
-@router.get("/", tags=["root"])
-async def root():
-    """Root endpoint"""
-    return {"message": "MCP FastAPI Server is running"}
 
-@router.get("/health", response_model=HealthResponse, tags=["health"])
-async def health_check():
-    """Health check endpoint"""
-    try:
-        health_data = await mcp_service.health_check()
-        
-        return HealthResponse(
-            status="healthy" if health_data["connected"] else "unhealthy",
-            mcp_connected=health_data["connected"],
-            tools_available=health_data["tools_available"],
-            details=health_data
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return HealthResponse(
-            status="error",
-            mcp_connected=False,
-            tools_available=0,
-            details={"error": str(e)}
-        )
 
-@router.get("/tools", response_model=ToolsResponse, tags=["tools"])
-async def get_tools():
-    """Get available MCP tools"""
-    try:
-        if not mcp_service.is_connected:
-            raise HTTPException(status_code=503, detail="MCP 클라이언트가 연결되지 않음")
-        
-        tools = mcp_service.available_tools
-        
-        return ToolsResponse(
-            tools=tools,
-            success=True
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get tools: {e}")
-        return ToolsResponse(
-            tools=[],
-            success=False,
-            error=str(e)
-        )
 
-@router.post("/query", response_model=QueryResponse, tags=["query"])
-async def query_endpoint(request: QueryRequest):
-    """Execute a query using LLM and available tools"""
-    try:
-        if not mcp_service.is_connected:
-            raise HTTPException(status_code=503, detail="MCP 클라이언트가 연결되지 않음")
-        
-        if not request.question.strip():
-            raise HTTPException(status_code=400, detail="질문이 비어있습니다")
-        
-        tools = mcp_service.available_tools
-        answer = await llm_service.query(request.question, tools)
-        
-        return QueryResponse(
-            answer=answer,
-            success=True
-        )
-    
-    except HTTPException:
-        raise
-    except (MCPConnectionError, LLMQueryError) as e:
-        logger.error(f"Query failed: {e}")
-        return QueryResponse(
-            answer="",
-            success=False,
-            error=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error in query: {e}")
-        return QueryResponse(
-            answer="",
-            success=False,
-            error=f"예상치 못한 오류가 발생했습니다: {str(e)}"
-        )
 
-@router.post("/query/stream", tags=["query"])
-async def query_stream_endpoint(request: QueryRequest):
-    """Execute a streaming query using LLM and available tools"""
-    try:
-        if not mcp_service.is_connected:
-            raise HTTPException(status_code=503, detail="MCP 클라이언트가 연결되지 않음")
-        
-        if not request.question.strip():
-            raise HTTPException(status_code=400, detail="질문이 비어있습니다")
-        
-        tools = mcp_service.available_tools
-        
-        return StreamingResponse(
-            llm_service.query_stream(request.question, tools),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-            }
-        )
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Streaming query failed: {e}")
-        raise HTTPException(status_code=500, detail=f"스트리밍 쿼리 실행 중 오류: {str(e)}")
 
-@router.get("/stats", tags=["monitoring"])
-async def get_tool_usage_stats():
-    """Get tool usage statistics"""
-    try:
-        stats = mcp_service.get_usage_stats()
-        return {
-            "tool_usage_stats": stats,
-            "total_calls": sum(stats.values()),
-            "most_used_tool": max(stats.items(), key=lambda x: x[1]) if stats else None
-        }
-    except Exception as e:
-        logger.error(f"Failed to get usage stats: {e}")
-        raise HTTPException(status_code=500, detail=f"통계 조회 중 오류: {str(e)}")
 
 # Frontend Integration Endpoints
 
