@@ -40,7 +40,7 @@
   position: relative;
   z-index: 1;
   border: 1px solid var(--color-border-light);
-  min-height: 70vh;
+  min-height: 75vh;
   max-height: none;
 }
 
@@ -213,7 +213,7 @@
   .chat-container {
     width: calc(100% - 20vw);
     margin: 20px auto 30px auto;
-    min-height: 65vh;
+    min-height: 70vh;
     max-height: none;
   }
   
@@ -235,7 +235,7 @@
     width: calc(100% - 16vw);
     margin: 16px auto 20px auto;
     border-radius: 16px;
-    min-height: 60vh;
+    min-height: 65vh;
     max-height: none;
   }
   
@@ -276,7 +276,7 @@
     width: calc(100% - 10vw);
     margin: 12px auto 15px auto;
     border-radius: 12px;
-    min-height: 55vh;
+    min-height: 60vh;
     max-height: none;
   }
   

@@ -239,25 +239,25 @@
 }
 
 .modern-table .edit-button {
-  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
   color: white;
-  box-shadow: 0 2px 8px rgba(72, 187, 120, 0.3);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
 }
 
 .modern-table .edit-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(72, 187, 120, 0.4);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
 }
 
 .modern-table .delete-button {
-  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
   color: white;
-  box-shadow: 0 2px 8px rgba(245, 101, 101, 0.3);
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3);
 }
 
 .modern-table .delete-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(245, 101, 101, 0.4);
+  box-shadow: 0 4px 16px rgba(249, 115, 22, 0.4);
 }
 
 .modern-table .action-button svg {

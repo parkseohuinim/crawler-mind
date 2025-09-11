@@ -223,8 +223,8 @@
 }
 
 .edit-button {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
-  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3) !important;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  box-shadow: 0 4px 6px -1px rgba(139, 92, 246, 0.3) !important;
 }
 
 .edit-button::before {
@@ -240,8 +240,8 @@
 
 .edit-button:hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 8px 12px -2px rgba(59, 130, 246, 0.4) !important;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important;
+  box-shadow: 0 8px 12px -2px rgba(139, 92, 246, 0.4) !important;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
 }
 
 .edit-button:hover::before {
@@ -249,8 +249,8 @@
 }
 
 .delete-button {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
-  box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3) !important;
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+  box-shadow: 0 4px 6px -1px rgba(249, 115, 22, 0.3) !important;
 }
 
 .delete-button::before {
@@ -266,8 +266,8 @@
 
 .delete-button:hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 8px 12px -2px rgba(239, 68, 68, 0.4) !important;
-  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+  box-shadow: 0 8px 12px -2px rgba(249, 115, 22, 0.4) !important;
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%) !important;
 }
 
 .delete-button:hover::before {

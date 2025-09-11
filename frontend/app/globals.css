@@ -53,14 +53,14 @@
 
 @import './_styles/components/json-compare/modern-json-compare.css';
 
-/* Global Layout Styles - FHD 기준 (더 작게 조정) */
+/* Global Layout Styles - FHD 기준 (폰트 크기만 조정) */
 html,
 body {
   height: 100%;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   margin: 0;
-  padding: 0.75rem; /* FHD 기준 패딩 더 작게 */
-  font-size: 13px; /* FHD 기준 폰트 크기 더 작게 */
+  padding: 1rem; /* FHD 기준 패딩 중간 정도 */
+  font-size: 15px; /* FHD 기준 폰트 크기 조금 더 증가 */
   overflow-x: hidden; /* Prevent horizontal scroll */
 }
 
