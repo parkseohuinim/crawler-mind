@@ -53,21 +53,31 @@
 
 @import './_styles/components/json-compare/modern-json-compare.css';
 
-/* Global Layout Styles - FHD 기준 (폰트 크기만 조정) */
-html,
+/* Global Layout Styles - Full Document Coverage */
+html {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
+  overflow-x: hidden;
+  /* Background covers entire document height including scrollable areas */
+  background-attachment: scroll;
+}
+
 body {
-  height: 100%;
+  min-height: 100vh;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   margin: 0;
-  padding: 1rem; /* FHD 기준 패딩 중간 정도 */
-  font-size: 15px; /* FHD 기준 폰트 크기 조금 더 증가 */
+  padding: 1rem;
+  font-size: 15px;
   overflow-x: hidden; /* Prevent horizontal scroll */
+  /* Background covers entire document height including scrollable areas */
+  background-attachment: scroll;
 }
 
 #__next {
-  height: 100%;
   min-height: 100vh;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
+  /* Background covers entire document height including scrollable areas */
+  background-attachment: scroll;
 }
 
 /* Custom Properties for Dynamic Theming */
@@ -145,22 +155,44 @@ body {
   }
 }
 
-/* Responsive Layout Adjustments */
+/* Responsive Layout Adjustments - Font Size and Padding Only */
 
-/* QHD 이상 (2560px~) */
-@media (min-width: 2560px) {
-  html,
+/* Small Displays (1280px-1365px) */
+@media screen and (max-width: 1365px) and (min-width: 1280px) {
   body {
-    font-size: 14px; /* QHD에서 보수적으로 증가 */
-    padding: 1rem; /* QHD에서 보수적으로 증가 */
+    font-size: 13px;
+    padding: 0.8rem;
   }
 }
 
-/* 4K 이상 (3840px~) */
-@media (min-width: 3840px) {
-  html,
+/* Medium Displays (1366px-1599px) */
+@media screen and (max-width: 1599px) and (min-width: 1366px) {
   body {
-    font-size: 16px; /* 4K에서 보수적으로 증가 */
-    padding: 1.25rem; /* 4K에서 보수적으로 증가 */
+    font-size: 14px;
+    padding: 0.9rem;
+  }
+}
+
+/* Large Displays (1600px-1920px) */
+@media screen and (max-width: 1920px) and (min-width: 1600px) {
+  body {
+    font-size: 15px;
+    padding: 1rem;
+  }
+}
+
+/* QHD and above (2560px~) */
+@media (min-width: 2560px) {
+  body {
+    font-size: 16px;
+    padding: 1.1rem;
+  }
+}
+
+/* 4K and above (3840px~) */
+@media (min-width: 3840px) {
+  body {
+    font-size: 18px;
+    padding: 1.25rem;
   }
 }

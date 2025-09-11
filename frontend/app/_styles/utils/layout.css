@@ -523,22 +523,24 @@
   }
 }
 
-/* Common Layout Patterns */
+/* Common Layout Patterns - Full Document Coverage */
 .page-layout {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   position: relative;
+  background-attachment: scroll;
 }
 
 .page-layout::before {
   content: '';
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
+  min-height: 100vh;
   background: 
     radial-gradient(circle at 20% 80%, rgba(225, 48, 108, 0.1) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(64, 93, 230, 0.1) 0%, transparent 50%),
@@ -569,15 +571,17 @@
   min-height: 100vh;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   position: relative;
+  background-attachment: scroll;
 }
 
 .sidebar-layout::before {
   content: '';
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
+  min-height: 100vh;
   background: 
     radial-gradient(circle at 20% 80%, rgba(225, 48, 108, 0.1) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(64, 93, 230, 0.1) 0%, transparent 50%),
@@ -599,15 +603,17 @@
   min-height: 100vh;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   position: relative;
+  background-attachment: scroll;
 }
 
 .center-content::before {
   content: '';
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
+  min-height: 100vh;
   background: 
     radial-gradient(circle at 20% 80%, rgba(225, 48, 108, 0.1) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(64, 93, 230, 0.1) 0%, transparent 50%),
