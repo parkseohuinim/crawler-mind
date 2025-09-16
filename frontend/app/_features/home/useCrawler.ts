@@ -93,7 +93,7 @@ export function useCrawler() {
     // SSE 완료 후 백엔드에서 최종 결과를 한번 더 조회하여 스냅샷을 보장
     if (currentTaskId) {
       try {
-        const res = await fetch(`/api/result/${currentTaskId}`);
+        const res = await fetch(`/api/rag-crawl/${currentTaskId}`);
         if (res.ok) {
           const data = await res.json();
           setMessages(prev => {
@@ -119,7 +119,7 @@ export function useCrawler() {
     // 에러가 와도 최종 결과가 생성되어 있을 수 있으므로 즉시 결과 조회 시도
     if (currentTaskId) {
       try {
-        const res = await fetch(`/api/result/${currentTaskId}`);
+        const res = await fetch(`/api/rag-crawl/${currentTaskId}`);
         if (res.ok) {
           const data = await res.json();
           setMessages(prev => {
@@ -188,13 +188,13 @@ export function useCrawler() {
     setIsProcessing(true);
 
     try {
-      // 작업 시작 요청
-      const response = await fetch('/api/process-url', {
+      // 작업 시작 요청 (백엔드는 urls 필드를 요구)
+      const response = await fetch('/api/rag-crawl', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url, mode }),
+        body: JSON.stringify({ urls: url }),
       });
 
       if (!response.ok) {

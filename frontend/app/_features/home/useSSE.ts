@@ -21,7 +21,7 @@ export function useSSE({ taskId, onEvent, onError, onComplete }: UseSSEProps) {
     const connectSSE = () => {
       try {
         // 직접 백엔드에 연결 (프록시 우회)
-        const eventSource = new EventSource(`/api/stream/${taskId}`);
+        const eventSource = new EventSource(`/api/rag-crawl/${taskId}/stream`);
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
@@ -55,7 +55,7 @@ export function useSSE({ taskId, onEvent, onError, onComplete }: UseSSEProps) {
             console.warn('SSE connection error, readyState:', eventSource.readyState);
             // 스트림 에러 시 최종 결과가 준비되었는지 확인
             try {
-              const res = await fetch(`/api/result/${taskId}`, { cache: 'no-store' });
+              const res = await fetch(`/api/rag-crawl/${taskId}`, { cache: 'no-store' });
               if (res.ok) {
                 const data = await res.json();
                 if (data?.result) {
