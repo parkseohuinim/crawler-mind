@@ -4,11 +4,16 @@ from fastapi.responses import StreamingResponse
 import logging
 import math
 
+from pydantic import BaseModel, Field
 from app.models import (
+    QueryRequest, QueryResponse, ToolsResponse, HealthResponse,
     ProcessUrlRequest, TaskResponse, TaskResult, CrawlingResult
 )
 from app.infrastructure.mcp.mcp_service import mcp_service
+from app.infrastructure.llm.llm_service import llm_service  
 from app.application.crawler.crawler_service import crawler_service
+from app.application.crawler.crawling_service import crawling_service
+from app.shared.exceptions.base import MCPConnectionError, LLMQueryError
 from app.shared.database.base import get_database_session
 from app.application.menu.menu_service import MenuApplicationService
 from app.presentation.api.rag.rag_router import router as rag_router
@@ -25,11 +30,131 @@ async def get_menu_service(db: AsyncSession = Depends(get_database_session)) -> 
     """Dependency to get menu application service"""
     return MenuApplicationService(db)
 
+@router.get("/", tags=["root"])
+async def root():
+    """Root endpoint"""
+    return {"message": "MCP FastAPI Server is running"}
 
+@router.get("/health", response_model=HealthResponse, tags=["health"])
+async def health_check():
+    """Health check endpoint"""
+    try:
+        health_data = await mcp_service.health_check()
+        
+        return HealthResponse(
+            status="healthy" if health_data["connected"] else "unhealthy",
+            mcp_connected=health_data["connected"],
+            tools_available=health_data["tools_available"],
+            details=health_data
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return HealthResponse(
+            status="error",
+            mcp_connected=False,
+            tools_available=0,
+            details={"error": str(e)}
+        )
 
+@router.get("/tools", response_model=ToolsResponse, tags=["tools"])
+async def get_tools():
+    """Get available MCP tools"""
+    try:
+        if not mcp_service.is_connected:
+            raise HTTPException(status_code=503, detail="MCP 클라이언트가 연결되지 않음")
+        
+        tools = mcp_service.available_tools
+        
+        return ToolsResponse(
+            tools=tools,
+            success=True
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get tools: {e}")
+        return ToolsResponse(
+            tools=[],
+            success=False,
+            error=str(e)
+        )
 
+@router.post("/query", response_model=QueryResponse, tags=["query"])
+async def query_endpoint(request: QueryRequest):
+    """Execute a query using LLM and available tools"""
+    try:
+        if not mcp_service.is_connected:
+            raise HTTPException(status_code=503, detail="MCP 클라이언트가 연결되지 않음")
+        
+        if not request.question.strip():
+            raise HTTPException(status_code=400, detail="질문이 비어있습니다")
+        
+        tools = mcp_service.available_tools
+        answer = await llm_service.query(request.question, tools)
+        
+        return QueryResponse(
+            answer=answer,
+            success=True
+        )
+    
+    except HTTPException:
+        raise
+    except (MCPConnectionError, LLMQueryError) as e:
+        logger.error(f"Query failed: {e}")
+        return QueryResponse(
+            answer="",
+            success=False,
+            error=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in query: {e}")
+        return QueryResponse(
+            answer="",
+            success=False,
+            error=f"예상치 못한 오류가 발생했습니다: {str(e)}"
+        )
 
+@router.post("/query/stream", tags=["query"])
+async def query_stream_endpoint(request: QueryRequest):
+    """Execute a streaming query using LLM and available tools"""
+    try:
+        if not mcp_service.is_connected:
+            raise HTTPException(status_code=503, detail="MCP 클라이언트가 연결되지 않음")
+        
+        if not request.question.strip():
+            raise HTTPException(status_code=400, detail="질문이 비어있습니다")
+        
+        tools = mcp_service.available_tools
+        
+        return StreamingResponse(
+            llm_service.query_stream(request.question, tools),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Streaming query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"스트리밍 쿼리 실행 중 오류: {str(e)}")
 
+@router.get("/stats", tags=["monitoring"])
+async def get_tool_usage_stats():
+    """Get tool usage statistics"""
+    try:
+        stats = mcp_service.get_usage_stats()
+        return {
+            "tool_usage_stats": stats,
+            "total_calls": sum(stats.values()),
+            "most_used_tool": max(stats.items(), key=lambda x: x[1]) if stats else None
+        }
+    except Exception as e:
+        logger.error(f"Failed to get usage stats: {e}")
+        raise HTTPException(status_code=500, detail=f"통계 조회 중 오류: {str(e)}")
 
 # Frontend Integration Endpoints
 
@@ -341,7 +466,93 @@ async def get_manager_info_by_id(
         logger.error(f"Manager info 조회 중 오류 발생: {e}")
         raise HTTPException(status_code=500, detail="Manager info 조회 중 오류가 발생했습니다")
 
+# === RAG Crawling Endpoints ===
 
+class RAGCrawlRequest(BaseModel):
+    """Request model for RAG crawling endpoint"""
+    urls: str = Field(
+        ..., 
+        description="크롤링할 URL들 또는 자연어 요청 (예: 'KT 로밍 상품 페이지들을 크롤링해주세요: https://... https://...')", 
+        min_length=1,
+        examples=[
+            "https://example1.com https://example2.com",
+            "다음 페이지들을 분석해주세요:\nhttps://site1.com/page1\nhttps://site2.com/page2",
+            "KT 로밍 상품 정보를 크롤링하고 싶습니다. https://globalroaming.kt.com/product/data/dru_talk.asp https://globalroaming.kt.com/product/data/dru_unlimit.asp"
+        ]
+    )
+
+@router.post("/rag-crawl", response_model=TaskResponse, tags=["rag-crawling"])
+async def create_rag_crawl_task(request: RAGCrawlRequest):
+    """
+    Create RAG crawling task for multiple URLs with intelligent parsing
+    
+    Supports:
+    - Multiple URL formats (space-separated, newline-separated)
+    - Natural language requests with URLs
+    - Automatic URL extraction using LLM + regex
+    - Based on rag-scraping app.py workflow
+    """
+    try:
+        if not mcp_service.is_connected:
+            raise HTTPException(status_code=503, detail="MCP 서버에 연결되지 않음")
+        
+        if not request.urls.strip():
+            raise HTTPException(status_code=400, detail="URL이 비어있습니다")
+        
+        # Create RAG crawling task
+        task_id = crawling_service.create_task(request.urls)
+        logger.info(f"✅ RAG crawling task created: {task_id}")
+        
+        return TaskResponse(taskId=task_id)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG crawling task creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"RAG 크롤링 작업 생성 실패: {str(e)}")
+
+@router.get("/rag-crawl/{task_id}", response_model=TaskResult, tags=["rag-crawling"])
+async def get_rag_crawl_task(task_id: str = Path(..., description="Task ID")):
+    """Get RAG crawling task status and result"""
+    try:
+        task = crawling_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+        
+        return task
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG task retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=f"RAG 작업 조회 실패: {str(e)}")
+
+@router.get("/rag-crawl/{task_id}/stream", tags=["rag-crawling"])
+async def stream_rag_crawl_task(task_id: str = Path(..., description="Task ID")):
+    """Stream RAG crawling task updates via Server-Sent Events"""
+    try:
+        task = crawling_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+        
+        logger.info(f"🎯 RAG SSE stream requested for task: {task_id}")
+        
+        return StreamingResponse(
+            crawling_service.get_task_stream(task_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Cache-Control",
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG SSE stream creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"RAG 스트림 생성 실패: {str(e)}")
 
 # Include RAG router
 router.include_router(rag_router)

@@ -49,13 +49,7 @@ class TaskStatus(str, Enum):
 
 class CrawlingResult(BaseModel):
     """Crawling result model"""
-    title: Optional[str] = Field(None, description="Page title")
-    textLength: Optional[int] = Field(None, description="Length of extracted text")
-    linkCount: Optional[int] = Field(None, description="Number of links found")
-    links: Optional[List[str]] = Field(None, description="List of found links")
-    summary: Optional[str] = Field(None, description="Content summary")
-    screenshot: Optional[str] = Field(None, description="Base64 encoded screenshot")
-    error: Optional[str] = Field(None, description="Error message if failed")
+    json_data: Optional[List[Dict[str, Any]]] = Field(None, description="RAG JSON formatted data")
 
 class TaskResult(BaseModel):
     """Task result model"""
