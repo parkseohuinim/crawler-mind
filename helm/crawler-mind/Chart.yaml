@@ -1,0 +1,21 @@
+apiVersion: v2
+name: crawler-mind
+description: AI-powered web crawling system with MCP server and menu link management
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - crawler
+  - ai
+  - mcp
+  - rag
+  - web-scraping
+home: https://github.com/your-org/crawler-mind
+sources:
+  - https://github.com/your-org/crawler-mind
+maintainers:
+  - name: Crawler Mind Team
+    email: admin@crawler-mind.com
+# No external dependencies - all components are included as templates
+annotations:
+  category: Application

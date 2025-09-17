@@ -1,0 +1,21 @@
+{{- if .Values.mcpServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "crawler-mind.fullname" . }}-mcp-server
+  labels:
+    {{- include "crawler-mind.mcpServer.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.mcpServer.service.type }}
+  ports:
+    - port: {{ .Values.mcpServer.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "crawler-mind.mcpServer.selectorLabels" . | nindent 4 }}
+{{- end }}

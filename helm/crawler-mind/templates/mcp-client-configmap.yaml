@@ -1,0 +1,26 @@
+{{- if .Values.mcpClient.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "crawler-mind.fullname" . }}-mcp-client
+  labels:
+    {{- include "crawler-mind.mcpClient.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  MCP_SERVER_URL: {{ .Values.mcpClient.env.MCP_SERVER_URL | quote }}
+  OPENAI_MODEL: {{ .Values.mcpClient.env.OPENAI_MODEL | quote }}
+  LOG_LEVEL: {{ .Values.mcpClient.env.LOG_LEVEL | quote }}
+  DEBUG: {{ .Values.mcpClient.env.DEBUG | quote }}
+  {{- if .Values.ingress.domain }}
+  {{- if and .Values.ingress.tls.enabled }}
+  CORS_ORIGINS: '["https://{{ .Values.ingress.domain }}","http://localhost:3000"]'
+  {{- else }}
+  CORS_ORIGINS: '["http://{{ .Values.ingress.domain }}","http://localhost:3000"]'
+  {{- end }}
+  {{- else }}
+  CORS_ORIGINS: '["http://localhost:3000","*"]'  # Allow all origins when using IP
+  {{- end }}
+{{- end }}
