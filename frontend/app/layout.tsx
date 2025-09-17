@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import Navigation from './_components/ui/Navigation';
+import { AuthProvider } from './_lib/auth/auth-context';
+import AuthenticatedLayout from './_components/layout/AuthenticatedLayout';
 
 export const metadata: Metadata = {
-  title: '크롤링 AI 어시스턴트',
-  description: '웹사이트를 분석하고 데이터를 추출하는 AI 어시스턴트',
+  title: 'Crawler Mind - Enterprise',
+  description: '엔터프라이즈 웹 크롤링 및 RAG 시스템',
 };
 
 export default function RootLayout({
@@ -15,8 +16,11 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body>
-        <Navigation />
-        {children}
+        <AuthProvider>
+          <AuthenticatedLayout>
+            {children}
+          </AuthenticatedLayout>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -36,12 +36,23 @@ export async function GET(request: NextRequest) {
     // 백엔드 서버 연결 테스트
     console.log('Testing backend connection...');
     
+    // 클라이언트에서 전달받은 Authorization 헤더를 백엔드로 전달
+    const authHeader = request.headers.get('authorization');
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'User-Agent': 'Next.js-API-Route'
+    };
+    
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+      console.log('Forwarding authorization header to backend');
+    } else {
+      console.warn('No authorization header found in request');
+    }
+
     const response = await fetch(fullUrl, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Next.js-API-Route'
-      }
+      headers
     });
     
     console.log('Response status:', response.status);

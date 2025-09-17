@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends, Path
 from fastapi.responses import StreamingResponse
 import logging
 import math
+from typing import Dict, Any, Optional
 
 from pydantic import BaseModel, Field
 from app.models import (
@@ -18,7 +19,24 @@ from app.shared.database.base import get_database_session
 from app.application.menu.menu_service import MenuApplicationService
 from app.presentation.api.rag.rag_router import router as rag_router
 from app.presentation.api.json_compare.json_compare_router import router as json_compare_router
+from app.presentation.api.auth_api import router as auth_router
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# 인증 미들웨어 import
+from app.infrastructure.auth.middleware import (
+    get_current_user,
+    require_authentication,
+    require_admin,
+    require_crawler_read,
+    require_crawler_write,
+    require_rag_read,
+    require_rag_write,
+    require_rag_search,
+    require_menu_links_read,
+    require_menu_links_write,
+    require_json_read,
+    require_json_write
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +177,10 @@ async def get_tool_usage_stats():
 # Frontend Integration Endpoints
 
 @router.post("/process-url", response_model=TaskResponse, tags=["frontend"])
-async def process_url(request: ProcessUrlRequest):
+async def process_url(
+    request: ProcessUrlRequest,
+    current_user: Dict[str, Any] = Depends(require_crawler_write)
+):
     """Start URL processing task"""
     try:
         if not mcp_service.is_connected:
@@ -183,7 +204,10 @@ async def process_url(request: ProcessUrlRequest):
         raise HTTPException(status_code=500, detail=f"작업 생성 중 오류: {str(e)}")
 
 @router.get("/stream/{task_id}", tags=["frontend"])
-async def stream_task_updates(task_id: str):
+async def stream_task_updates(
+    task_id: str,
+    current_user: Dict[str, Any] = Depends(require_crawler_read)
+):
     """Stream task updates via SSE"""
     try:
         task = crawler_service.get_task(task_id)
@@ -233,7 +257,8 @@ async def get_menu_links(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=1000, description="Page size"),
     search: str = Query(None, description="Search term"),
-    service: MenuApplicationService = Depends(get_menu_service)
+    service: MenuApplicationService = Depends(get_menu_service),
+    current_user: Dict[str, Any] = Depends(require_menu_links_read)
 ):
     """Get menu links with pagination and search (Legacy API)"""
     try:
@@ -482,7 +507,10 @@ class RAGCrawlRequest(BaseModel):
     )
 
 @router.post("/rag-crawl", response_model=TaskResponse, tags=["rag-crawling"])
-async def create_rag_crawl_task(request: RAGCrawlRequest):
+async def create_rag_crawl_task(
+    request: RAGCrawlRequest,
+    current_user: Dict[str, Any] = Depends(require_rag_write)
+):
     """
     Create RAG crawling task for multiple URLs with intelligent parsing
     
@@ -553,6 +581,9 @@ async def stream_rag_crawl_task(task_id: str = Path(..., description="Task ID"))
     except Exception as e:
         logger.error(f"RAG SSE stream creation failed: {e}")
         raise HTTPException(status_code=500, detail=f"RAG 스트림 생성 실패: {str(e)}")
+
+# Include auth router
+router.include_router(auth_router)
 
 # Include RAG router
 router.include_router(rag_router)

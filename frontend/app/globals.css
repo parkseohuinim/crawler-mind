@@ -18,6 +18,11 @@
 @import './_styles/components/ui/buttons.css';
 @import './_styles/components/ui/forms.css';
 @import './_styles/components/ui/cards.css';
+
+/* Authentication & Layout Components */
+@import './_styles/components/auth.css';
+@import './_styles/components/layout.css';
+@import './_styles/components/navigation.css';
 @import './_styles/components/ui/modals.css';
 @import './_styles/components/ui/tables.css';
 @import './_styles/components/ui/pages.css';

@@ -1,0 +1,125 @@
+# Aegis Shield - Enterprise Authentication Server Configuration
+server:
+  port: 8080
+  servlet:
+    context-path: /aegis
+
+
+spring:
+  application:
+    name: aegis-shield-server
+    
+  datasource:
+    url: jdbc:postgresql://100.119.125.34:5432/auth_db?currentSchema=auth
+    username: ${DB_USERNAME:admin}  
+    password: ${DB_PASSWORD:199084}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 600000
+      connection-timeout: 30000
+  
+  # Java 21 Virtual Threads 설정
+  threads:
+    virtual:
+      enabled: true
+  
+  # JPA 설정
+  jpa:
+    hibernate:
+      ddl-auto: validate  # 프로덕션에서는 validate 사용
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  # Jackson 설정
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# JWT 설정
+jwt:
+  secret: alvin-aegis-shield-jwt-secret-key-for-authentication-system-2024-very-secure-key
+  access-token-validity: 3600    # 1시간 (초)
+  refresh-token-validity: 604800 # 7일 (초)
+  issuer: "aegis-shield-server"
+
+# 로깅 설정
+logging:
+  level:
+    com.aegis.auth: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/aegis-shield.log
+
+# Actuator 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  info:
+    env:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# 애플리케이션 정보
+info:
+  app:
+    name: Aegis Shield Server
+    description: Enterprise-grade Authentication & Authorization Server
+    version: 1.0.0
+    java-version: ${java.version}
+    spring-boot-version: ${spring-boot.version}
+    build-time: ${BUILD_TIME:N/A}
+
+# CORS 설정
+cors:
+  allowed-origins: 
+    - http://localhost:3000
+    - http://127.0.0.1:3000
+    - http://localhost:8000
+    - http://127.0.0.1:8000
+  allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+  allowed-headers: "*"
+  allow-credentials: true
+  max-age: 3600
+
+# 보안 설정
+security:
+  password:
+    min-length: 8
+    require-uppercase: true
+    require-lowercase: true
+    require-digits: true
+    require-special-chars: true
+  session:
+    timeout: 1800 # 30분 (초)
+  rate-limit:
+    login-attempts: 5
+    lockout-duration: 900 # 15분 (초)

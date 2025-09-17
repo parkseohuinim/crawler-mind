@@ -1,0 +1,366 @@
+/* 인증 관련 스타일 */
+
+/* 로그인 폼 */
+.login-form {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.login-container {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-header h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a202c;
+  margin-bottom: 8px;
+}
+
+.login-header p {
+  color: #718096;
+  font-size: 16px;
+}
+
+.login-form-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 14px;
+}
+
+.form-group input {
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.2s ease;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group input:disabled {
+  background-color: #f7fafc;
+  cursor: not-allowed;
+}
+
+.error-message {
+  background-color: #fed7d7;
+  color: #c53030;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid #feb2b2;
+}
+
+.login-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 14px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.login-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.login-footer {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.login-footer p {
+  font-size: 14px;
+  color: #4a5568;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.login-footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.login-footer li {
+  font-size: 13px;
+  color: #718096;
+  margin-bottom: 4px;
+  font-family: 'Courier New', monospace;
+  background-color: #f7fafc;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* 인증 가드 */
+.auth-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f7fafc;
+}
+
+.loading-spinner {
+  text-align: center;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e2e8f0;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-spinner p {
+  color: #4a5568;
+  font-size: 16px;
+}
+
+.auth-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f7fafc;
+  padding: 20px;
+}
+
+.error-container {
+  background: white;
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.error-container h3 {
+  color: #c53030;
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+.error-container p {
+  color: #4a5568;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.error-container ul {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+
+.error-container li {
+  background-color: #fed7d7;
+  color: #c53030;
+  padding: 8px 12px;
+  margin: 4px 0;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+/* 사용자 메뉴 */
+.user-menu {
+  position: relative;
+}
+
+.user-menu-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.user-menu-button:hover {
+  border-color: #cbd5e0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.user-name {
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.chevron {
+  transition: transform 0.2s ease;
+  color: #718096;
+}
+
+.chevron.open {
+  transform: rotate(180deg);
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  min-width: 280px;
+  z-index: 1000;
+}
+
+.user-info {
+  padding: 20px;
+}
+
+.user-details {
+  margin-bottom: 16px;
+}
+
+.user-full-name {
+  font-weight: 600;
+  color: #1a202c;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.user-email {
+  color: #4a5568;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.user-username {
+  color: #718096;
+  font-size: 13px;
+}
+
+.user-roles {
+  margin-top: 16px;
+}
+
+.roles-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.roles-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 12px;
+  text-transform: capitalize;
+}
+
+.menu-separator {
+  height: 1px;
+  background-color: #e2e8f0;
+}
+
+.menu-actions {
+  padding: 8px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.menu-item:hover {
+  background-color: #f7fafc;
+}
+
+.logout-button {
+  color: #c53030;
+}
+
+.logout-button:hover {
+  background-color: #fed7d7;
+}

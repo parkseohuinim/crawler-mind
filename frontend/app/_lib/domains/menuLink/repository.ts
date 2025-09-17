@@ -2,8 +2,11 @@
  * MenuLink Repository - DB 접근 추상화
  */
 import { MenuLink, MenuLinkCreate, MenuLinkUpdate, MenuLinksResponse } from './types';
+import { authService } from '../../auth/auth-service';
 
-const API_BASE_URL = '/api/menu-links';
+// MCP Client에 직접 요청 (Next.js API 라우트 우회)
+const API_BASE_URL = process.env.NEXT_PUBLIC_MCP_API_URL || 'http://localhost:8000';
+const MENU_LINKS_ENDPOINT = `${API_BASE_URL}/api/menu-links`;
 
 export const findAll = async (
   page: number = 1, 
@@ -19,7 +22,7 @@ export const findAll = async (
     params.append('search', search);
   }
   
-  const response = await fetch(`${API_BASE_URL}?${params}`);
+  const response = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}?${params}`);
   
   if (!response.ok) {
     throw new Error('Failed to fetch menu links');
@@ -29,7 +32,7 @@ export const findAll = async (
 };
 
 export const findById = async (id: number): Promise<MenuLink> => {
-  const response = await fetch(`${API_BASE_URL}/${id}`);
+  const response = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}/${id}`);
   
   if (!response.ok) {
     throw new Error('Failed to fetch menu link');
@@ -39,7 +42,7 @@ export const findById = async (id: number): Promise<MenuLink> => {
 };
 
 export const create = async (data: MenuLinkCreate): Promise<MenuLink> => {
-  const response = await fetch(API_BASE_URL, {
+  const response = await authService.authenticatedFetch(MENU_LINKS_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -53,7 +56,7 @@ export const create = async (data: MenuLinkCreate): Promise<MenuLink> => {
 };
 
 export const update = async (id: number, data: MenuLinkUpdate): Promise<MenuLink> => {
-  const response = await fetch(`${API_BASE_URL}/${id}`, {
+  const response = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -67,7 +70,7 @@ export const update = async (id: number, data: MenuLinkUpdate): Promise<MenuLink
 };
 
 export const remove = async (id: number): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/${id}`, {
+  const response = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}/${id}`, {
     method: 'DELETE',
   });
   
@@ -90,7 +93,7 @@ export const findAvailableForManager = async (
     params.append('search', search);
   }
   
-  const response = await fetch(`${API_BASE_URL}/available-for-manager?${params}`);
+  const response = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}/available-for-manager?${params}`);
   
   if (!response.ok) {
     throw new Error('Failed to fetch available menu links for manager');
@@ -113,7 +116,7 @@ export const findWithManagers = async (
     params.append('search', search);
   }
   
-  const response = await fetch(`${API_BASE_URL}/with-managers?${params}`);
+  const response = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}/with-managers?${params}`);
   
   if (!response.ok) {
     throw new Error('Failed to fetch menu links with managers');

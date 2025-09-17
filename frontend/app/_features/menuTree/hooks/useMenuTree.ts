@@ -2,6 +2,7 @@
  * Custom hook for menu tree functionality
  */
 import { useState, useEffect, useCallback } from 'react';
+import { authService } from '../../../_lib/auth/auth-service';
 
 // Use basic types to avoid import issues
 interface MenuLink {
@@ -38,6 +39,10 @@ export interface TreeNode {
   managers: MenuManagerInfo[];
 }
 
+// MCP Client API URLs (외부에서 정의하여 재생성 방지)
+const API_BASE_URL = process.env.NEXT_PUBLIC_MCP_API_URL || 'http://localhost:8000';
+const MENU_LINKS_ENDPOINT = `${API_BASE_URL}/api/menu-links`;
+
 export function useMenuTree() {
   const [menuLinks, setMenuLinks] = useState<MenuLink[]>([]);
   const [managers, setManagers] = useState<MenuManagerInfo[]>([]);
@@ -52,7 +57,7 @@ export function useMenuTree() {
     
     try {
       // First, just get menu links to ensure tree shows up
-      const menuLinksResponse = await fetch('/api/menu-links?page=1&size=1000');
+      const menuLinksResponse = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}?page=1&size=1000`);
       
       if (!menuLinksResponse.ok) {
         throw new Error(`HTTP error! status: ${menuLinksResponse.status}`);
@@ -64,7 +69,7 @@ export function useMenuTree() {
       // Try to get managers, but don't fail if it doesn't work
       let allManagers: MenuManagerInfo[] = [];
       try {
-        const managersResponse = await fetch('/api/menu-links/manager-info?page=1&size=1000');
+        const managersResponse = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}/manager-info-list?page=1&size=1000`);
         if (managersResponse.ok) {
           const managersData = await managersResponse.json();
           allManagers = managersData.items || [];
@@ -185,7 +190,7 @@ export function useMenuTree() {
   // Get menu links with managers
   const getMenuLinksWithManagers = useCallback(async () => {
     try {
-      const response = await fetch('/api/menu-links/with-managers?page=1&size=1000');
+      const response = await authService.authenticatedFetch(`${MENU_LINKS_ENDPOINT}/with-managers?page=1&size=1000`);
       if (!response.ok) {
         throw new Error('Failed to fetch menu links with managers');
       }
