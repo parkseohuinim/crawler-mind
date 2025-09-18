@@ -1,0 +1,35 @@
+replicaCount: 1
+
+image:
+  repository: seohuipark/opensearch-with-nori
+  tag: "2.13.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  portHttp: 9200
+  portTransport: 9600
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1
+    memory: 2Gi
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: standard
+
+env:
+  - name: discovery.type
+    value: single-node
+  - name: DISABLE_SECURITY_PLUGIN
+    value: "true"
+  - name: OPENSEARCH_JAVA_OPTS
+    value: "-Xms512m -Xmx512m"
+
+fullnameOverride: opensearch
+

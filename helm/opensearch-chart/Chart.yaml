@@ -1,0 +1,7 @@
+apiVersion: v2
+name: opensearch
+description: A Helm chart for OpenSearch (with Nori)
+type: application
+version: 0.1.0
+appVersion: "2.13.0"
+

@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s" (include "opensearch.fullname" . | trim) | quote }}
+  labels:
+    app: {{ printf "%s" (include "opensearch.name" . | trim) | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ printf "%s" (include "opensearch.name" . | trim) }}
+  template:
+    metadata:
+      labels:
+        app: {{ printf "%s" (include "opensearch.name" . | trim) }}
+    spec:
+      containers:
+        - name: opensearch
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.portHttp }}
+              name: http
+            - containerPort: {{ .Values.service.portTransport }}
+              name: transport
+          env:
+{{- range .Values.env }}
+            - name: {{ .name }}
+              value: "{{ .value }}"
+{{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/opensearch/data
+          # 프로브는 dev 환경에서는 제거 (안정성 ↑)
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-pvc" (include "opensearch.fullname" . | trim) | quote }}
+

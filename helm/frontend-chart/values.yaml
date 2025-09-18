@@ -1,0 +1,49 @@
+replicaCount: 1
+
+image:
+  repository: seohuipark/crawler-mind-frontend
+  tag: dev
+  pullPolicy: IfNotPresent
+
+env:
+  NODE_ENV: "production"
+  # 브라우저(외부) → API 서브도메인으로 호출
+  NEXT_PUBLIC_API_BASE_URL: "https://api.alvinpark.xyz/api"
+  # 서버사이드(내부) → Kubernetes 서비스로 호출  
+  API_BASE_URL: "http://mcp-client:8000"
+  # Next.js 텔레메트리 비활성화
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Next.js 포트 및 호스트 설정
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: crawler.alvinpark.xyz
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: [] # Cloudflare Tunnel 사용시 비워둠
+
+# Health check 설정
+healthCheck:
+  enabled: true
+  path: /
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3

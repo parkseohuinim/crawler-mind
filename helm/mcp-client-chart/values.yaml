@@ -1,0 +1,56 @@
+replicaCount: 1
+
+image:
+  repository: seohuipark/crawler-mind-mcp-client
+  tag: dev
+  pullPolicy: IfNotPresent
+
+env:
+  MCP_SERVER_URL: "http://mcp-server:4200/my-custom-path/"  # 끝의 / 제거
+  CORS_ORIGINS: "[\"https://crawler.alvinpark.xyz\",\"https://api.alvinpark.xyz\",\"http://localhost:3000\"]"  # API 서브도메인 추가
+  OPENAI_MODEL: "gpt-4o"
+  OPENAI_API_KEY: "YOUR_OPENAI_API_KEY_HERE"
+
+  DATABASE_URL: "postgresql+asyncpg://admin:YOUR_PASSWORD@postgres:5432/crawler_mind"
+
+  # PostgreSQL
+  # POSTGRES_USER: "admin"
+  # POSTGRES_PASSWORD: "199084"
+  # POSTGRES_HOST: "postgres"
+  # POSTGRES_PORT: "5432"
+  # POSTGRES_DB: "crawler_mind"
+  # POSTGRES_POOL_SIZE: "10"
+  # POSTGRES_MAX_OVERFLOW: "20"
+  # POSTGRES_POOL_TIMEOUT: "30"
+  # POSTGRES_POOL_RECYCLE: "3600"  # 1시간마다 연결 재생성
+  # POSTGRES_POOL_PRE_PING: "true"  # 연결 상태 확인
+
+  # OpenSearch - HOST와 PORT 둘 다 필요
+  OPENSEARCH_HOST: "http://opensearch:9200"
+  OPENSEARCH_PORT: "9200"               # 포트 별도 지정
+
+  # Qdrant - HOST와 PORT 둘 다 필요
+  QDRANT_HOST: "http://qdrant-qdrant:6333"
+  QDRANT_PORT: "6333"                   # 포트 별도 지정
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: api.alvinpark.xyz  # 🔥 API 서브도메인으로 변경
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: [] # Cloudflare Tunnel 쓸 때는 여기 비워둬도 됨

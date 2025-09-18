@@ -1,0 +1,19 @@
+replicaCount: 1
+
+image:
+  repository: seohuipark/crawler-mind-mcp-server
+  tag: dev
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+service:
+  type: ClusterIP
+  port: 4200
+

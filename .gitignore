@@ -241,3 +241,7 @@ package-lock.json
 # Build artifacts
 *.whl
 *.tar.gz
+
+# Helm secrets
+helm/**/values-secrets.yaml
+**/values-secrets.yaml

@@ -1,0 +1,18 @@
+replicaCount: 1
+
+image:
+  repository: qdrant/qdrant
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  httpPort: 6333
+  grpcPort: 6334
+
+persistence:
+  enabled: true
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+  storageClassName: standard

@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: crawler-mind
+  labels:
+    app: frontend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      # mcp-client가 준비될 때까지 대기
+      initContainers:
+        - name: wait-for-mcp-client
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - >
+              until curl -f http://mcp-client:8000/health;
+              do echo "⏳ waiting for mcp-client";
+              sleep 5;
+              done;
+
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          {{- if .Values.healthCheck.enabled }}
+          # readinessProbe: Next.js 앱이 준비되었는지 확인
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.path }}
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+
+          # livenessProbe: Next.js 앱이 살아있는지 확인
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.path }}
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds | mul 2 }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds | mul 3 }}
+            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds | mul 2 }}
+            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+          {{- end }}
+
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.env.NODE_ENV | quote }}
+            - name: NEXT_PUBLIC_API_BASE_URL
+              value: {{ .Values.env.NEXT_PUBLIC_API_BASE_URL | quote }}
+            - name: API_BASE_URL
+              value: {{ .Values.env.API_BASE_URL | quote }}
+            - name: NEXT_TELEMETRY_DISABLED
+              value: {{ .Values.env.NEXT_TELEMETRY_DISABLED | quote }}
+            - name: PORT
+              value: {{ .Values.env.PORT | quote }}
+            - name: HOSTNAME
+              value: {{ .Values.env.HOSTNAME | quote }}
+
+          ports:
+            - containerPort: {{ .Values.service.port }}
+              name: http
+          
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}
