@@ -27,5 +27,5 @@ spec:
       volumes:
         - name: qdrant-storage
           persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-qdrant-pvc
+            claimName: {{ if .Values.persistence.existingClaim }}{{ .Values.persistence.existingClaim }}{{ else }}{{ .Release.Name }}-qdrant-pvc{{ end }}
 

@@ -95,17 +95,67 @@ ingress:
 
 ### 공통 문제들
 
-1. **PostgreSQL 연결 실패**
+1. **PostgreSQL 데이터 손실 방지**
+   - Helm uninstall/install 시 데이터가 사라지는 문제 해결됨
+   - PVC에 `helm.sh/resource-policy: keep` 어노테이션 적용
+   - 기존 PVC 사용: `values.yaml`에서 `persistence.existingClaim` 설정
+
+2. **PostgreSQL 연결 실패**
    - initContainer가 DB 준비를 기다립니다
    - `kubectl logs -n crawler-mind deployment/mcp-client` 확인
 
-2. **이미지 Pull 실패**
+3. **이미지 Pull 실패**
    - 이미지 태그 확인: `seohuipark/crawler-mind-*:dev`
    - Docker Hub에서 이미지 존재 여부 확인
 
-3. **Ingress 충돌**
+4. **Ingress 충돌**
    - 동일한 hostname 사용 시 발생
    - `kubectl get ingress -n crawler-mind` 확인
+
+### 데이터 영구 보존 (PostgreSQL, Qdrant, OpenSearch)
+
+**방법 1: 자동 PVC 보존 (현재 적용됨)**
+```bash
+# 모든 데이터베이스 서비스 - 데이터 보존됨
+helm uninstall postgres -n crawler-mind
+helm uninstall qdrant -n crawler-mind
+helm uninstall opensearch -n crawler-mind
+
+helm install postgres ./postgres-chart -f ./postgres-chart/values-secrets.yaml -n crawler-mind
+helm install qdrant ./qdrant-chart -n crawler-mind
+helm install opensearch ./opensearch-chart -n crawler-mind
+```
+
+**방법 2: 기존 PVC 재사용**
+```bash
+# 1. 기존 PVC 이름 확인
+kubectl get pvc -n crawler-mind
+
+# 2. values.yaml 수정 (각 서비스별)
+# PostgreSQL
+persistence:
+  existingClaim: "postgres-pvc"
+
+# Qdrant  
+persistence:
+  existingClaim: "qdrant-qdrant-pvc"
+
+# OpenSearch
+persistence:
+  existingClaim: "opensearch-pvc"
+
+# 3. 재배포
+helm upgrade postgres ./postgres-chart -f ./postgres-chart/values-secrets.yaml -n crawler-mind
+helm upgrade qdrant ./qdrant-chart -n crawler-mind
+helm upgrade opensearch ./opensearch-chart -n crawler-mind
+```
+
+**데이터 손실 위험 없는 서비스:**
+- ✅ PostgreSQL (메타데이터) - 보존됨
+- ✅ Qdrant (벡터 데이터) - 보존됨  
+- ✅ OpenSearch (인덱스 데이터) - 보존됨
+- ⚠️ MCP-Client/Server (Stateless) - 데이터 없음
+- ⚠️ Frontend (Stateless) - 데이터 없음
 
 ### 로그 확인
 

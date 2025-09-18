@@ -1,8 +1,11 @@
-{{- if .Values.persistence.enabled }}
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ .Release.Name }}-pvc
+  annotations:
+    # PVC가 Helm release와 함께 삭제되지 않도록 설정
+    "helm.sh/resource-policy": keep
 spec:
   accessModes:
     - ReadWriteOnce
