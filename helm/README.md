@@ -2,7 +2,7 @@
 
 Kubernetes에서 Crawler Mind 시스템을 배포하기 위한 Helm 차트들입니다.
 
-## 🚀 빠른 시작
+## 빠른 시작
 
 ### 1. 민감 정보 설정
 
@@ -58,7 +58,7 @@ kubectl port-forward --address 0.0.0.0 -n crawler-mind svc/frontend 3001:3000 &
 kubectl port-forward --address 0.0.0.0 -n crawler-mind svc/mcp-client 8001:8000 &
 ```
 
-## 📋 서비스 구성
+## 서비스 구성
 
 | 서비스 | 포트 | 설명 |
 |--------|------|------|
@@ -69,7 +69,7 @@ kubectl port-forward --address 0.0.0.0 -n crawler-mind svc/mcp-client 8001:8000 
 | OpenSearch | 9200 | 검색 엔진 |
 | Qdrant | 6333 | 벡터 데이터베이스 |
 
-## 🔧 개발 환경 설정
+## 개발 환경 설정
 
 ### 환경변수 템플릿
 
@@ -91,7 +91,7 @@ ingress:
   - service: http_status:404
 ```
 
-## 🛠️ 트러블슈팅
+## 트러블슈팅
 
 ### 공통 문제들
 
@@ -118,7 +118,7 @@ kubectl logs -n crawler-mind deployment/mcp-client
 kubectl logs -n crawler-mind deployment/frontend
 ```
 
-## 📚 아키텍처
+## 아키텍처
 
 ```
 Browser → Cloudflare Tunnel → Kubernetes Cluster
