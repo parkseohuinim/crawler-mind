@@ -1,0 +1,17 @@
+{{- if .Values.mcpClient.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-client
+  labels:
+    app: mcp-client
+spec:
+  type: {{ .Values.mcpClient.service.type }}
+  ports:
+    - port: {{ .Values.mcpClient.service.port }}
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: mcp-client
+{{- end }}

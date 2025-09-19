@@ -1,0 +1,54 @@
+{{- if .Values.opensearch.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensearch
+  labels:
+    app: opensearch
+spec:
+  replicas: {{ .Values.opensearch.replicaCount }}
+  selector:
+    matchLabels:
+      app: opensearch
+  template:
+    metadata:
+      labels:
+        app: opensearch
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: opensearch
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.opensearch.image.repository }}:{{ .Values.opensearch.image.tag }}"
+          imagePullPolicy: {{ .Values.opensearch.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.opensearch.service.httpPort }}
+              name: http
+            - containerPort: {{ .Values.opensearch.service.transportPort }}
+              name: transport
+          env:
+            - name: discovery.type
+              value: {{ .Values.opensearch.env.discovery.type | quote }}
+            - name: DISABLE_SECURITY_PLUGIN
+              value: {{ .Values.opensearch.env.DISABLE_SECURITY_PLUGIN | quote }}
+            - name: OPENSEARCH_JAVA_OPTS
+              value: {{ .Values.opensearch.env.OPENSEARCH_JAVA_OPTS | quote }}
+          volumeMounts:
+            {{- if .Values.opensearch.persistence.enabled }}
+            - name: opensearch-storage
+              mountPath: /usr/share/opensearch/data
+            {{- end }}
+          resources:
+            {{- toYaml .Values.opensearch.resources | nindent 12 }}
+      volumes:
+        {{- if .Values.opensearch.persistence.enabled }}
+        - name: opensearch-storage
+          persistentVolumeClaim:
+            claimName: opensearch-pvc
+        {{- else }}
+        - name: opensearch-storage
+          emptyDir: {}
+        {{- end }}
+{{- end }}

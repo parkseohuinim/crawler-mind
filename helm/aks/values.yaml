@@ -1,0 +1,540 @@
+# Default values for crawler-mind
+# This is a YAML-formatted file.
+
+# Environment configuration
+# Set this to switch between different deployment profiles
+# Options: "wsl-dev", "aks-prod", "aks-dev"
+environment: "aks-prod"
+
+# Global settings
+global:
+  imageRegistry: "acraz01devcodi.azurecr.io"
+  imagePullSecrets:
+    - name: codi-acr-secret
+  storageClass: "azurefile"  # Azure Premium SSD for production
+
+# Common labels
+commonLabels: {}
+commonAnnotations: {}
+
+# Image settings
+image:
+  registry: acraz01devcodi.azurecr.io
+  repository: dev/crawler  # Change this to your Docker Hub username
+  tag: dev
+  pullPolicy: IfNotPresent
+
+# Frontend service
+frontend:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: crawler-mind-frontend
+    tag: dev
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP  # Will be overridden based on environment
+    port: 3000
+    targetPort: 3000
+    # NodePort configuration for WSL/local development
+    nodePort: 30000  # Used when type is NodePort
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  
+  env:
+    NODE_ENV: production
+    # Will be set via ingress host or environment-specific config
+    NEXT_PUBLIC_API_BASE_URL: "https://api.alvinpark.xyz/api"
+    # Internal service communication
+    API_BASE_URL: "http://mcp-client:8000"
+    # Cloudflare domain for WSL development
+    CLOUDFLARE_DOMAIN: "https://crawler.alvinpark.xyz"
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# MCP Client service (FastAPI)
+mcpClient:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: crawler-mind-mcp-client
+    tag: dev
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+  
+  resources:
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+    requests:
+      cpu: 750m
+      memory: 1Gi
+  
+  env:
+    MCP_SERVER_URL: "http://mcp-server:4200/my-custom-path/"
+    OPENAI_MODEL: "gpt-4o"
+    LOG_LEVEL: "warning"
+    DEBUG: "false"
+    CORS_ORIGINS: "[\"*\"]"
+    
+    # OpenSearch connection
+    OPENSEARCH_HOST: "http://opensearch:9200"
+    OPENSEARCH_PORT: "9200"
+    
+    # Qdrant connection
+    QDRANT_HOST: "http://qdrant:6333"
+    QDRANT_PORT: "6333"
+  
+  # Secret environment variables (실제 값은 values-secrets.yaml에 설정)
+  envSecret:
+    OPENAI_API_KEY: ""
+    DATABASE_URL: ""
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  
+  livenessProbe:
+    httpGet:
+      path: /docs
+      port: http
+    initialDelaySeconds: 60
+    periodSeconds: 10
+  
+  readinessProbe:
+    httpGet:
+      path: /docs
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 5
+
+# MCP Server service
+mcpServer:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: crawler-mind-mcp-server
+    tag: dev
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 4200
+    targetPort: 4200
+  
+  resources:
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+    requests:
+      cpu: 750m
+      memory: 1Gi
+  
+  env:
+    PYTHONUNBUFFERED: "1"
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+# Qdrant vector database
+qdrant:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: acraz01devcodi.azurecr.io/dev/crawler/qdrant
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    ports:
+      http: 6333
+      grpc: 6334
+  
+  resources:
+    limits:
+      cpu: 1500m
+      memory: 4Gi
+    requests:
+      cpu: 750m
+      memory: 2Gi
+  
+  # Qdrant specific security context - Root 권한
+  podSecurityContext:
+    runAsUser: 0  
+    runAsGroup: 0  
+    fsGroup: 0  
+  
+  securityContext:
+    runAsUser: 0 
+    runAsGroup: 0 
+  
+  persistence:
+    enabled: true
+    storageClass: "azurefile"
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    annotations: {}
+  
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+# OpenSearch
+opensearch:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: dev/crawler/opensearch-with-nori
+    tag: "2.13.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    httpPort: 9200
+    transportPort: 9600
+  
+  persistence:
+    enabled: true
+    size: 10Gi
+    accessMode: ReadWriteOnce
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  
+  env:
+    discovery.type: single-node
+    DISABLE_SECURITY_PLUGIN: "true"
+    OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+
+# OpenSearch Dashboards
+opensearchDashboards:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: acraz01devcodi.azurecr.io/dev/crawler/opensearch-dashboards
+    tag: 2.13.0
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 5601
+    targetPort: 5601
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  
+  env:
+    OPENSEARCH_HOSTS: '["http://crawler-mind-opensearch:9200"]'
+    OPENSEARCH_SECURITY_ENABLED: "false"
+
+# PostgreSQL
+postgresql:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: acraz01devcodi.azurecr.io/dev/crawler/postgresql
+    tag: "15"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 5432
+    targetPort: 5432
+  
+  auth:
+    postgresPassword: "199084"
+    username: "admin"
+    password: "199084"
+    database: "crawler-mind"
+  
+  persistence:
+    enabled: true
+    storageClass: "azurefile"
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    annotations: {}
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  
+  livenessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - exec pg_isready -U "admin" -d "dbname=crawler-mind" -h 127.0.0.1 -p 5432
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 6
+  
+  readinessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - -e
+        - exec pg_isready -U "admin" -d "dbname=crawler-mind" -h 127.0.0.1 -p 5432
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 6
+
+# Ingress configuration
+ingress:
+  enabled: true  # Will be disabled for WSL development
+  className: "webapprouting.kubernetes.azure.com"  # or "azure-application-gateway" for Azure
+  
+  # Domain configuration - set this based on your setup
+  domain: ""  # Leave empty to use LoadBalancer IP directly, or set your domain
+  
+  # TLS configuration - disable for IP-only access
+  tls:
+    enabled: false  # Set to true if using a domain with SSL
+    secretName: "crawler-mind-tls"
+  
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    # SSL annotations - only applied when TLS is enabled
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  
+  hosts:
+    - host: ""  # Will be set dynamically based on domain configuration
+      paths:
+        - path: /
+          pathType: Prefix
+          service: crawler-mind-frontend
+          port: 3000
+        - path: /api
+          pathType: Prefix
+          service: crawler-mind-mcp-client
+          port: 8000
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod Security Context
+podSecurityContext:
+  fsGroup: 2000
+
+# Security Context
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  ingress: []
+  egress: []
+
+# Environment-specific configurations
+# These override the default values based on the 'environment' setting
+environments:
+  # WSL Development with Cloudflare Tunnel
+  wsl-dev:
+    frontend:
+      replicaCount: 1
+      service:
+        type: NodePort
+        nodePort: 30000
+      env:
+        NEXT_PUBLIC_API_BASE_URL: "https://crawler.alvinpark.xyz/api"
+      resources:
+        requests:
+          cpu: 250m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      autoscaling:
+        enabled: false
+    
+    mcpClient:
+      replicaCount: 1
+      resources:
+        requests:
+          cpu: 500m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      autoscaling:
+        enabled: false
+    
+    mcpServer:
+      replicaCount: 1
+      resources:
+        requests:
+          cpu: 500m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      autoscaling:
+        enabled: false
+    
+    # Disable resource-heavy services for development
+    postgresql:
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+    
+    qdrant:
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1000m
+          memory: 2Gi
+    
+    opensearchDashboards:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 250m
+          memory: 512Mi
+    
+    # Disable ingress for WSL (using NodePort + Cloudflare)
+    ingress:
+      enabled: false
+
+  # AKS Development Environment
+  aks-dev:
+    frontend:
+      replicaCount: 1
+      service:
+        type: ClusterIP
+      autoscaling:
+        enabled: false
+        
+    mcpClient:
+      replicaCount: 1
+      autoscaling:
+        enabled: false
+        
+    mcpServer:
+      replicaCount: 1
+      autoscaling:
+        enabled: false
+    
+    ingress:
+      enabled: true
+      domain: ""  # Use LoadBalancer IP
+
+  # AKS Production Environment (default values)
+  aks-prod:
+    # Uses default values from above sections
+    ingress:
+      enabled: true
+      tls:
+        enabled: true  # Enable SSL in production
+      annotations:
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"

@@ -1,0 +1,15 @@
+{{- if .Values.qdrant.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qdrant-pvc
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.qdrant.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.qdrant.persistence.size }}
+  storageClassName: {{ .Values.global.storageClass }}
+{{- end }}
