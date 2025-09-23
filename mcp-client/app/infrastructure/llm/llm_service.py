@@ -15,51 +15,239 @@ class LLMService:
     
     def __init__(self):
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
-        
-        # Initialize tokenizer for token counting
         try:
             self.tokenizer = tiktoken.encoding_for_model("gpt-4o")
         except Exception:
-            # Fallback to cl100k_base encoding
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
     
+    def _format_tools_for_openai(self, available_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Convert MCP tools format to OpenAI tools format
+        
+        MCP format might be: {"name": "tool_name", "description": "...", "parameters": {...}}
+        OpenAI expects: {"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}
+        """
+        formatted_tools = []
+        for tool in available_tools:
+            # Check if already in OpenAI format
+            if "type" in tool and tool["type"] == "function" and "function" in tool:
+                formatted_tools.append(tool)
+            else:
+                # Convert from MCP format to OpenAI format
+                formatted_tool = {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name", ""),
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("parameters", {
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        })
+                    }
+                }
+                formatted_tools.append(formatted_tool)
+        return formatted_tools
+    
+    # (삭제됨) 상단 중복 정의된 _filter_tools_by_intent — 클래스의 하단 정의만 사용
+    
     async def query(self, question: str, available_tools: List[Dict[str, Any]]) -> str:
-        """
-        Execute a query against the LLM with available tools
-        
-        Args:
-            question: User's question
-            available_tools: List of available MCP tools in OpenAI format
-            
-        Returns:
-            LLM response as string
-        """
+        """Execute a query against the LLM with available tools"""
         try:
-            # 1차 요청
-            resp = await self._client.responses.create(
+            # 1단계: 의도 분류 및 도구 필터링 (토큰 제한 해결)
+            filtered_tools = self._filter_tools_by_intent(question, available_tools)
+            
+            # Format tools for OpenAI
+            formatted_tools = self._format_tools_for_openai(filtered_tools)
+            
+            # Log for debugging
+            logger.info(f"🔍 의도 분류 완료: {len(filtered_tools)}개 도구 선택 (전체 {len(available_tools)}개 중)")
+            logger.debug(f"Formatted tools: {json.dumps(formatted_tools[:1], indent=2)}")  # Log first tool as example
+            
+            tool_catalog = self._get_tool_categories_description(formatted_tools)
+            system_prompt = f"""You are an AI assistant specialized in web analysis and data processing.
+
+CRITICAL: Always use tools when available. Execute the appropriate tools to perform real work; avoid generic explanations without using tools.
+
+Available tools (dynamic):
+{tool_catalog}
+
+Tool usage principles:
+1) If a URL is present → use crawl4ai_scrape or crawl_urls_sequential
+2) For system status → use health_check
+3) For text summarization/clean-up → use summarize_content
+4) For menu/DB queries → use menu_search
+5) For HTML/Confluence content → use ari_extract_main_blocks and/or ari_markdown_to_json and/or convert_to_json_format
+
+Response policy:
+- After using tools, produce a concise, high-signal answer based on the results.
+- IMPORTANT: Write all final answers to the user in Korean.
+"""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ]
+            
+            # First API call with tools
+            response = await self._client.chat.completions.create(
                 model=settings.openai_model,
-                input=[{"role": "user", "content": question}],
-                tools=available_tools,
+                messages=messages,
+                tools=formatted_tools if formatted_tools else None,  # Only pass tools if available
+                tool_choice="auto" if formatted_tools else None
             )
-
-            # Tool 호출이 없을 때
-            tool_calls = [o for o in resp.output if getattr(o, "type", "") == "function_call"]
-            if not tool_calls:
-                return resp.output_text
-
-            # Tool 호출 처리
-            next_input = await self._process_tool_calls(question, tool_calls)
-
-            # 2차 호출 -> 최종 답변
-            final = await self._client.responses.create(
+            
+            # Check if tools were called
+            message = response.choices[0].message
+            
+            if not message.tool_calls:
+                return message.content or ""
+            
+            # Process tool calls
+            messages.append(message.model_dump())  # Add assistant's message with tool calls
+            
+            # Execute each tool call
+            for tool_call in message.tool_calls:
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+                
+                logger.info(f"Executing tool: {function_name} with args: {function_args}")
+                
+                try:
+                    # Call your MCP service
+                    tool_result = await mcp_service.call_tool(function_name, function_args)
+                    
+                    # Format the result
+                    if hasattr(tool_result, 'structured_content'):
+                        result_content = json.dumps(tool_result.structured_content, ensure_ascii=False)
+                    elif hasattr(tool_result, 'data'):
+                        result_content = json.dumps(tool_result.data, ensure_ascii=False)
+                    elif isinstance(tool_result, dict):
+                        result_content = json.dumps(tool_result, ensure_ascii=False)
+                    else:
+                        result_content = str(tool_result)
+                    
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result_content
+                    })
+                except Exception as e:
+                    logger.error(f"Tool execution failed for {function_name}: {e}")
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps({"error": str(e)}, ensure_ascii=False)
+                    })
+            
+            # Second API call for final response
+            final_response = await self._client.chat.completions.create(
                 model=settings.openai_model,
-                input=next_input,
+                messages=messages
             )
-            return final.output_text
-        
+            
+            return final_response.choices[0].message.content or ""
+            
         except Exception as e:
             logger.error(f"LLM query failed: {e}")
             raise LLMQueryError(f"LLM 쿼리 실행 중 오류: {str(e)}")
+    
+    def _filter_tools_by_intent(self, question: str, available_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        질문의 의도를 분석하여 관련된 도구만 필터링
+        """
+        question_lower = question.lower()
+        
+        # 의도별 키워드 매핑
+        intent_keywords = {
+            'web_crawling': ['크롤링', 'crawl', 'url', '웹사이트', '웹페이지', '스크래핑', 'scrape'],
+            'system_status': ['상태', 'status', 'health', '서버', '통계', 'statistics'],
+            'text_analysis': ['요약', 'summarize', '분석', 'analyze', '추출', 'extract', '텍스트'],
+            'html_processing': ['html', '파일', 'file', 'confluence', '업로드', 'upload', 'ari'],
+            'db_query': ['메뉴', 'menu', '링크', 'link', '매니저', 'manager', '담당자', '조회', 'query'],
+            'rag_query': ['rag', '검색', 'search', '문서', 'document', '지식', 'knowledge']
+        }
+        
+        # 의도 감지
+        detected_intents = []
+        for intent, keywords in intent_keywords.items():
+            if any(keyword in question_lower for keyword in keywords):
+                detected_intents.append(intent)
+        
+        # 의도별 도구 매핑
+        tool_mapping = {
+            'web_crawling': ['crawl4ai_scrape', 'crawl_urls_sequential'],
+            'system_status': ['health_check'],
+            'text_analysis': ['summarize_content'],
+            'html_processing': ['ari_extract_main_blocks', 'ari_markdown_to_json', 'convert_to_json_format'],
+            'db_query': ['menu_search'],
+            'rag_query': []
+        }
+        
+        # 관련 도구들 수집
+        relevant_tools = []
+        for intent in detected_intents:
+            relevant_tools.extend(tool_mapping.get(intent, []))
+        
+        # 기본 도구들 (항상 포함)
+        essential_tools = ['health_check', 'crawl4ai_scrape', 'summarize_content']
+        relevant_tools.extend(essential_tools)
+        
+        # 중복 제거
+        relevant_tools = list(set(relevant_tools))
+        
+        # 도구 필터링
+        filtered_tools = []
+        for tool in available_tools:
+            tool_name = tool.get('function', {}).get('name', '')
+            if tool_name in relevant_tools:
+                filtered_tools.append(tool)
+        
+        logger.info(f"🔍 의도 분류: {detected_intents}")
+        logger.info(f"🎯 필터링된 도구: {[t.get('function', {}).get('name', '') for t in filtered_tools]}")
+        
+        return filtered_tools if filtered_tools else available_tools[:10]  # 최대 10개로 제한
+    
+    def _get_tool_categories_description(self, tools: List[Dict[str, Any]]) -> str:
+        """
+        도구 카테고리별 설명 생성
+        """
+        categories = {
+            'web': [],
+            'system': [],
+            'text': [],
+            'html': [],
+            'other': []
+        }
+        
+        for tool in tools:
+            tool_name = tool.get('function', {}).get('name', '')
+            tool_desc = tool.get('function', {}).get('description', '')
+            
+            if 'crawl' in tool_name or 'scrape' in tool_name:
+                categories['web'].append(f"- {tool_name}: {tool_desc}")
+            elif 'health' in tool_name or 'status' in tool_name:
+                categories['system'].append(f"- {tool_name}: {tool_desc}")
+            elif 'summarize' in tool_name or 'extract' in tool_name:
+                categories['text'].append(f"- {tool_name}: {tool_desc}")
+            elif 'html' in tool_name or 'table' in tool_name:
+                categories['html'].append(f"- {tool_name}: {tool_desc}")
+            else:
+                categories['other'].append(f"- {tool_name}: {tool_desc}")
+        
+        description = ""
+        if categories['web']:
+            description += "**웹 크롤링 도구:**\n" + "\n".join(categories['web']) + "\n\n"
+        if categories['system']:
+            description += "**시스템 상태 도구:**\n" + "\n".join(categories['system']) + "\n\n"
+        if categories['text']:
+            description += "**텍스트 분석 도구:**\n" + "\n".join(categories['text']) + "\n\n"
+        if categories['html']:
+            description += "**HTML 처리 도구:**\n" + "\n".join(categories['html']) + "\n\n"
+        if categories['other']:
+            description += "**기타 도구:**\n" + "\n".join(categories['other']) + "\n\n"
+        
+        return description
     
     async def generate_response(self, prompt: str) -> str:
         """
@@ -116,8 +304,11 @@ class LLMService:
             Dict with event type and data (not SSE formatted strings)
         """
         try:
-            # 1차 요청 - 스트리밍 모드 (간단 재시도)
-            logger.warning(f"🔧 LLM tools available: {len(available_tools)} tools")
+            # 1단계: 의도 분류 및 도구 필터링
+            filtered_tools = self._filter_tools_by_intent(question, available_tools)
+            
+            # 2차 요청 - 스트리밍 모드
+            logger.warning(f"🔧 LLM tools available: {len(filtered_tools)} tools (filtered from {len(available_tools)})")
             logger.warning(f"🔧 LLM question: {question[:100]}...")
             
             attempt = 0
@@ -125,14 +316,30 @@ class LLMService:
             last_error: Exception | None = None
             while attempt < 2 and stream is None:
                 try:
-                    logger.warning(f"🔧 Creating OpenAI stream with {len(available_tools)} tools")
+                    logger.warning(f"🔧 Creating OpenAI stream with {len(filtered_tools)} filtered tools")
                     stream = await self._client.responses.create(
                         model=settings.openai_model,
                         input=[
-                            {"role": "system", "content": "You are a web analysis assistant. You MUST use ALL tools that are explicitly mentioned in the user's request. Complete each step in the exact order specified. Do not stop until you have used every requested tool. If a tool fails, still continue with the remaining tools."},
+                            {"role": "system", "content": f"""You are an AI assistant specialized in web analysis and data processing.
+
+CRITICAL: Always use tools when available. Execute the appropriate tools to perform real work; avoid generic explanations without using tools.
+
+Available tools: {len(filtered_tools)} (filtered from {len(available_tools)} total)
+
+Tool usage principles:
+1) If a URL is present → use crawl4ai_scrape or crawl_urls_sequential
+2) For system status → use health_check
+3) For text summarization/clean-up → use summarize_content
+4) For menu/DB queries → use menu_search
+5) For HTML/Confluence content → use ari_extract_main_blocks and/or ari_markdown_to_json and/or convert_to_json_format
+
+Response policy:
+- After using tools, produce a concise, high-signal answer based on the results.
+- IMPORTANT: Write all final answers to the user in Korean.
+"""},
                             {"role": "user", "content": question}
                         ],
-                        tools=available_tools,
+                        tools=filtered_tools,
                         stream=True
                     )
                     logger.warning(f"🔧 OpenAI stream created successfully")
@@ -174,7 +381,7 @@ class LLMService:
                 elif event_type == 'ResponseFunctionCallArgumentsDoneEvent':
                     if current_call:
                         logger.warning(f"🔧 Function call completed: {current_call['name']}")
-                        yield {'type': 'tool_call_delta', 'data': {'tool_calls': tool_calls}}
+                        yield f"data: {json.dumps({'type': 'tool_call_delta', 'data': {'tool_calls': tool_calls}})}\n\n"
                 
                 # 전체 응답 완료
                 elif event_type == 'ResponseCompletedEvent':
@@ -183,17 +390,20 @@ class LLMService:
 
             # Tool 호출이 있는 경우 완성된 tool_calls 반환
             if tool_calls:
-                yield {'type': 'tool_calls_ready', 'data': {'tool_calls': tool_calls}}
+                yield f"data: {json.dumps({'type': 'tool_calls_ready', 'data': {'tool_calls': tool_calls}})}\n\n"
                 async for event in self._process_tool_calls_stream(question, tool_calls):
-                    yield event
+                    if isinstance(event, dict):
+                        yield f"data: {json.dumps(event)}\n\n"
+                    else:
+                        yield event
             
-            yield {'type': 'done', 'data': {}}
+            yield f"data: {json.dumps({'type': 'done', 'data': {}})}\n\n"
             
         except Exception as e:
             # 스트리밍 실패는 치명적이지 않음: 상태로 알리고 상위에서 폴백 진행
             logger.warning(f"Streaming LLM query failed, will fallback: {e}")
-            yield {'type': 'error', 'data': {'message': f'LLM 연결 실패: {str(e)}'}}
-            yield {'type': 'done', 'data': {}}
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'LLM 연결 실패: {str(e)}'}})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'data': {}})}\n\n"
     
     async def _process_tool_calls(self, question: str, tool_calls: List[Any]) -> List[Any]:
         """Process tool calls and return next input for LLM"""
@@ -272,9 +482,9 @@ class LLMService:
                     current_call['arguments'] += tool_call.function.arguments
         return current_call
     
-    async def _process_tool_calls_stream(self, question: str, tool_calls: List[Dict]) -> AsyncGenerator[Dict[str, Any], None]:
+    async def _process_tool_calls_stream(self, question: str, tool_calls: List[Dict]) -> AsyncGenerator[str, None]:
         """Process tool calls in streaming mode"""
-        yield {'type': 'tool_start', 'data': {'message': 'Tool 실행 중...'}}
+        yield f"data: {json.dumps({'type': 'tool_start', 'data': {'message': 'Tool 실행 중...'}})}\n\n"
         
         next_input: List[Any] = [{"role": "user", "content": question}]
         
@@ -286,7 +496,7 @@ class LLMService:
                 
                 # Tool 실행 결과를 스트림으로 전송 (원본 결과 전달)
                 tool_message = f"Tool '{call['name']}' 실행 완료"
-                yield {'type': 'tool_result', 'data': {'tool_name': call['name'], 'message': tool_message, 'result': result}}
+                yield f"data: {json.dumps({'type': 'tool_result', 'data': {'tool_name': call['name'], 'message': tool_message, 'result': result}})}\n\n"
                 
                 # 다음 요청을 위한 메시지 구성
                 next_input.append({
@@ -343,7 +553,7 @@ class LLMService:
                 
             except Exception as tool_error:
                 error_message = f'Tool 실행 오류: {str(tool_error)}'
-                yield {'type': 'tool_error', 'data': {'tool_name': call['name'], 'error': error_message}}
+                yield f"data: {json.dumps({'type': 'tool_error', 'data': {'tool_name': call['name'], 'error': error_message}})}\n\n"
 
         # 2차 호출 - 최종 답변 스트리밍
         final_stream = await self._client.responses.create(
@@ -356,7 +566,7 @@ class LLMService:
             if hasattr(chunk, 'choices') and chunk.choices:
                 choice = chunk.choices[0]
                 if hasattr(choice, 'delta') and choice.delta and hasattr(choice.delta, 'content') and choice.delta.content:
-                    yield {'type': 'final_content', 'data': {'content': choice.delta.content}}
+                    yield f"data: {json.dumps({'type': 'final_content', 'data': {'content': choice.delta.content}})}\n\n"
 
 # Global service instance
 llm_service = LLMService()
