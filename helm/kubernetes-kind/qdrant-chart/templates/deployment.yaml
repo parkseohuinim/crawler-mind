@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-qdrant
+  name: qdrant
   labels:
     app: qdrant
 spec:
@@ -27,5 +27,5 @@ spec:
       volumes:
         - name: qdrant-storage
           persistentVolumeClaim:
-            claimName: {{ if .Values.persistence.existingClaim }}{{ .Values.persistence.existingClaim }}{{ else }}{{ .Release.Name }}-qdrant-pvc{{ end }}
+            claimName: {{ if .Values.persistence.existingClaim }}{{ .Values.persistence.existingClaim }}{{ else }}qdrant-pvc{{ end }}
 

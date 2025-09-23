@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ .Release.Name }}-qdrant-pvc
+  name: qdrant-pvc
   annotations:
     # PVC가 Helm release와 함께 삭제되지 않도록 설정
     "helm.sh/resource-policy": keep
