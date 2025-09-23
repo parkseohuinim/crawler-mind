@@ -26,11 +26,11 @@ env:
   # POSTGRES_POOL_PRE_PING: "true"  # 연결 상태 확인
 
   # OpenSearch - HOST와 PORT 둘 다 필요
-  OPENSEARCH_HOST: "http://opensearch:9200"
+  OPENSEARCH_HOST: "https://opensearch.alvinpark.xyz"
   OPENSEARCH_PORT: "9200"               # 포트 별도 지정
 
   # Qdrant - HOST와 PORT 둘 다 필요
-  QDRANT_HOST: "http://qdrant-qdrant:6333"
+  QDRANT_HOST: "https://qdrant.alvinpark.xyz"  # 외부 도메인 또는 "http://qdrant:6333" (내부 서비스)
   QDRANT_PORT: "6333"                   # 포트 별도 지정
 
 resources:
