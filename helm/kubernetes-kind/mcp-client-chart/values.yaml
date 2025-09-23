@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: seohuipark/crawler-mind-mcp-client
   tag: dev
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 env:
   MCP_SERVER_URL: "http://mcp-server:4200/my-custom-path/"  # 끝의 / 제거

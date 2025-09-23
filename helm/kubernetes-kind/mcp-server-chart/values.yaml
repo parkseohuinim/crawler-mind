@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: seohuipark/crawler-mind-mcp-server
   tag: dev
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 resources:
   requests:

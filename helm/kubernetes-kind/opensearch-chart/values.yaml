@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: seohuipark/opensearch-with-nori
   tag: "2.13.0"
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 service:
   type: ClusterIP
