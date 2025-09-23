@@ -49,7 +49,10 @@ helm install ingress-nginx ingress-nginx/ingress-nginx \
   --create-namespace \
   --set controller.service.type=NodePort \
   --set controller.service.nodePorts.http=30760 \
-  --set controller.service.nodePorts.https=31784
+  --set controller.service.nodePorts.https=31784 \
+  --set controller.config.proxy-body-size="100m" \
+  --set controller.config.proxy-read-timeout="1800" \
+  --set controller.config.proxy-send-timeout="1800"
 ```
 
 ### 3. 민감 정보 설정

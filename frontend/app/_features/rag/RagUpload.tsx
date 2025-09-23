@@ -13,12 +13,18 @@ export default function RagUpload({ onUploadSuccess }: RagUploadProps) {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.type === 'application/json') {
+    console.log('Selected file:', selectedFile);
+    console.log('File type:', selectedFile?.type);
+    console.log('File name:', selectedFile?.name);
+    
+    if (selectedFile && (selectedFile.type === 'application/json' || selectedFile.name.endsWith('.json'))) {
       setFile(selectedFile);
       setMessage('');
+      console.log('File accepted');
     } else {
       setMessage('JSON 파일만 업로드 가능합니다.');
       setFile(null);
+      console.log('File rejected - type:', selectedFile?.type, 'name:', selectedFile?.name);
     }
   };
 
@@ -28,17 +34,21 @@ export default function RagUpload({ onUploadSuccess }: RagUploadProps) {
       return;
     }
 
+    console.log('Starting upload for file:', file.name, 'size:', file.size);
     setUploading(true);
     setMessage('');
 
     try {
       const formData = new FormData();
       formData.append('file', file);
+      console.log('FormData created, sending request...');
 
       const response = await fetch('/api/rag/upload', {
         method: 'POST',
         body: formData,
       });
+      
+      console.log('Response received:', response.status, response.statusText);
 
       if (response.ok) {
         const result = await response.json();

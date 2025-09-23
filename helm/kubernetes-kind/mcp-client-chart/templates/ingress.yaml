@@ -6,6 +6,9 @@ metadata:
   namespace: crawler-mind
   annotations:
     kubernetes.io/ingress.class: {{ .Values.ingress.className }}
+    {{- if .Values.ingress.annotations }}
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}   # 👈 ingressClassName 명시
   rules:
