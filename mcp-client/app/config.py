@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     
     # OpenAI Configuration
     openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4o"
+    openai_model: str = "gpt-4o-mini"
     openai_timeout: int = 60
     
     # Database Configuration

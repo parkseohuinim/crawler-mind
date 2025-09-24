@@ -15,6 +15,12 @@ spec:
       labels:
         app: mcp-client
     spec:
+      # Pod Security Context
+      securityContext:
+        runAsNonRoot: {{ .Values.podSecurityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.podSecurityContext.runAsUser }}
+        fsGroup: {{ .Values.podSecurityContext.fsGroup }}
+
       # ✅ initContainer: postgres 준비될 때까지 대기
       initContainers:
         - name: wait-for-postgres
@@ -43,15 +49,15 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
 
-          # ✅ livenessProbe: /health 체크
+          # ✅ livenessProbe: /health 체크 (대용량 파일 처리 고려하여 간격 증가)
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 3
+            initialDelaySeconds: 120
+            periodSeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 5
 
           env:
             - name: MCP_SERVER_URL
@@ -76,6 +82,38 @@ spec:
             - name: QDRANT_PORT
               value: {{ .Values.env.QDRANT_PORT | quote }}
 
+            # 메모리 최적화 설정
+            - name: PYTHONUNBUFFERED
+              value: {{ .Values.env.PYTHONUNBUFFERED | quote }}
+            - name: PYTHONDONTWRITEBYTECODE
+              value: {{ .Values.env.PYTHONDONTWRITEBYTECODE | quote }}
+            
+            # 벡터 DB 처리 최적화 설정
+            - name: MAX_WORKERS
+              value: {{ .Values.env.MAX_WORKERS | quote }}
+            - name: EMBEDDING_BATCH_SIZE
+              value: {{ .Values.env.EMBEDDING_BATCH_SIZE | quote }}
+            - name: QDRANT_BATCH_SIZE
+              value: {{ .Values.env.QDRANT_BATCH_SIZE | quote }}
+            - name: CHUNK_SIZE
+              value: {{ .Values.env.CHUNK_SIZE | quote }}
+            - name: CHUNK_OVERLAP
+              value: {{ .Values.env.CHUNK_OVERLAP | quote }}
+            
+            # 메모리 관리 설정
+            - name: ENABLE_MEMORY_CLEANUP
+              value: {{ .Values.env.ENABLE_MEMORY_CLEANUP | quote }}
+            - name: GC_THRESHOLD
+              value: {{ .Values.env.GC_THRESHOLD | quote }}
+            - name: MAX_DOCUMENTS_IN_MEMORY
+              value: {{ .Values.env.MAX_DOCUMENTS_IN_MEMORY | quote }}
+            
+            # 파일 업로드 관련 설정
+            - name: MAX_FILE_SIZE
+              value: {{ .Values.env.MAX_FILE_SIZE | quote }}
+            - name: UPLOAD_TIMEOUT
+              value: {{ .Values.env.UPLOAD_TIMEOUT | quote }}
+
           ports:
             - containerPort: {{ .Values.service.port }}
           resources:
@@ -85,3 +123,42 @@ spec:
             limits:
               cpu: {{ .Values.resources.limits.cpu }}
               memory: {{ .Values.resources.limits.memory }}
+
+          # 메모리 최적화를 위한 security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+
+          # 대용량 파일 처리 시 안정성을 위한 설정
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+            - name: cache-volume
+              mountPath: /app/cache
+
+      # Node Affinity 설정 (메모리 최적화된 노드 선호)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values: ["m5.large", "m5.xlarge", "c5.large", "c5.xlarge"]
+
+      # Tolerations 설정 (메모리 압박 시에도 스케줄링 허용)
+      tolerations: {{ .Values.tolerations | toJson }}
+
+      # 임시 파일과 캐시를 위한 볼륨 설정 (성능과 안정성의 균형)
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            sizeLimit: 1Gi  # 성능을 고려한 적절한 크기
+        - name: cache-volume
+          emptyDir:
+            sizeLimit: 512Mi  # 성능을 고려한 적절한 크기
