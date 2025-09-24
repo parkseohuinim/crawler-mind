@@ -4,6 +4,7 @@ from playwright.async_api import async_playwright
 import base64
 import json
 from typing import Dict, List, Any, Optional
+import httpx
 import logging
 from urllib.parse import urljoin, urlparse
 import re
@@ -24,249 +25,110 @@ mcp = FastMCP(name="CrawlerMindServer")
 @mcp.tool
 def health_check() -> Dict[str, Any]:
     """
-    Health check endpoint for container orchestration
+    런타임 의존성을 실제 점검하는 헬스체크
+    - crawl4ai 임포트 가능 여부
+    - Playwright 브라우저 기동 가능 여부(간단 체크)
     """
+    logger.info("[MCP] health_check called")
+    crawl4ai_ok = False
+    playwright_ok = False
+
+    # 1) crawl4ai import 확인
+    try:
+        import importlib
+        importlib.import_module("crawl4ai")
+        crawl4ai_ok = True
+    except Exception as e:
+        logger.warning(f"crawl4ai import failed: {e}")
+
+    # 2) Playwright import 확인 (이벤트 루프 중첩 문제 방지 위해 런타임 기동은 생략)
+    try:
+        import importlib
+        importlib.import_module("playwright.async_api")
+        playwright_ok = True
+    except Exception as e:
+        logger.warning(f"playwright import failed: {e}")
+
+    status = "healthy" if (crawl4ai_ok and playwright_ok) else "degraded" if (crawl4ai_ok or playwright_ok) else "unhealthy"
     return {
-        "success": True,
-        "status": "healthy",
-        "service": "mcp-server"
+        "success": crawl4ai_ok and playwright_ok,
+        "status": status,
+        "service": "mcp-server",
+        "dependencies": {
+            "crawl4ai": crawl4ai_ok,
+            "playwright": playwright_ok,
+        }
     }
+
 
 async def _crawl_with_playwright(url: str) -> Dict[str, Any]:
     """
-    내부 Playwright 크롤러 헬퍼 (툴 내부에서 재사용)
+    Playwright를 사용한 폴백 크롤링 함수
     """
-    logger.info(f"[MCP] _crawl_with_playwright called for URL: {url}")
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        try:
-            try:
-                await page.goto(url, wait_until='networkidle', timeout=30000)
-            except Exception:
-                await page.goto(url, wait_until='domcontentloaded', timeout=15000)
-            title = await page.title()
-            html_content = await page.content()
-            try:
-                meta_description = await page.get_attribute('meta[name="description"]', 'content', timeout=5000) or ""
-            except Exception:
-                meta_description = ""
-            result = {
-                "success": True,
-                "url": url,
-                "title": title,
-                "html_content": html_content,
-                "meta_description": meta_description,
-                "content_length": len(html_content)
-            }
-            logger.info(f"[MCP] _crawl_with_playwright completed: {len(html_content)} chars, title: '{title}'")
-            return result
-        finally:
-            await browser.close()
-
-@mcp.tool
-async def crawl_webpage(url: str) -> Dict[str, Any]:
-    """
-    Playwright를 사용하여 웹페이지를 크롤링합니다.
-    페이지 로드, HTML 추출, 기본 메타데이터를 수집합니다.
-    """
-    logger.info(f"[MCP] crawl_webpage called for URL: {url}")
-    try:
-        return await _crawl_with_playwright(url)
-    except Exception as e:
-        logger.error(f"크롤링 실패 {url}: {str(e)}")
-        return {"success": False, "url": url, "error": str(e)}
-
-@mcp.tool
-def extract_text_content(html_content: str) -> Dict[str, Any]:
-    """
-    HTML 콘텐츠에서 텍스트만 추출합니다.
-    태그를 제거하고 읽기 가능한 텍스트만 반환합니다.
-    """
-    logger.info(f"[MCP] extract_text_content called with {len(html_content)} chars")
-    try:
-        from bs4 import BeautifulSoup
-        
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # 스크립트와 스타일 태그 제거
-        for script in soup(["script", "style"]):
-            script.decompose()
-        
-        # 텍스트 추출
-        text = soup.get_text()
-        
-        # 공백 정리
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = ' '.join(chunk for chunk in chunks if chunk)
-        
-        result = {
-            "success": True,
-            "text_content": text,
-            "text_length": len(text),
-            "word_count": len(text.split())
-        }
-        logger.info(f"[MCP] extract_text_content completed: {len(text)} chars, {len(text.split())} words")
-        return result
-        
-    except Exception as e:
-        logger.error(f"텍스트 추출 실패: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-@mcp.tool
-def extract_links(html_content: str, base_url: str) -> Dict[str, Any]:
-    """
-    HTML 콘텐츠에서 모든 링크를 추출합니다.
-    상대 링크는 절대 링크로 변환합니다.
-    """
-    logger.info(f"[MCP] extract_links called with {len(html_content)} chars, base_url: {base_url}")
-    try:
-        from bs4 import BeautifulSoup
-        
-        soup = BeautifulSoup(html_content, 'html.parser')
-        links = []
-        
-        for link in soup.find_all('a', href=True):
-            href = link['href'].strip()
-            if href:
-                # 절대 URL로 변환
-                absolute_url = urljoin(base_url, href)
-                link_text = link.get_text(strip=True)
-                
-                links.append({
-                    "url": absolute_url,
-                    "text": link_text,
-                    "is_external": urlparse(absolute_url).netloc != urlparse(base_url).netloc
-                })
-        
-        # 중복 제거 (URL 기준)
-        unique_links = []
-        seen_urls = set()
-        for link in links:
-            if link["url"] not in seen_urls:
-                unique_links.append(link)
-                seen_urls.add(link["url"])
-        
-        result = {
-            "success": True,
-            "links": unique_links,
-            "total_links": len(unique_links),
-            "internal_links": len([l for l in unique_links if not l["is_external"]]),
-            "external_links": len([l for l in unique_links if l["is_external"]])
-        }
-        logger.info(f"[MCP] extract_links completed: {len(unique_links)} links found")
-        return result
-        
-    except Exception as e:
-        logger.error(f"링크 추출 실패: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-@mcp.tool
-async def take_screenshot(url: str) -> Dict[str, Any]:
-    """
-    웹페이지의 스크린샷을 촬영합니다.
-    Base64 인코딩된 이미지를 반환합니다.
-    """
-    logger.info(f"[MCP] take_screenshot called for URL: {url}")
+    logger.info(f"[MCP] Playwright 폴백으로 {url} 크롤링 시작")
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            
-            # 페이지 로드 (더 관대한 전략)
             try:
-                await page.goto(url, wait_until='networkidle', timeout=30000)
-            except Exception:
-                # networkidle 실패 시 domcontentloaded로 재시도
-                await page.goto(url, wait_until='domcontentloaded', timeout=15000)
-            
-            # 스크린샷 촬영
-            screenshot_bytes = await page.screenshot(full_page=True, type='png')
-            screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
-            
-            await browser.close()
-            
-            result = {
-                "success": True,
-                "url": url,
-                "screenshot": screenshot_base64,
-                "format": "png",
-                "size_bytes": len(screenshot_bytes)
-            }
-            logger.info(f"[MCP] take_screenshot completed: {len(screenshot_bytes)} bytes, {len(screenshot_base64)} chars")
-            return result
-            
+                page = await browser.new_page()
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                
+                # 기본 정보 추출
+                title = await page.title()
+                html_content = await page.content()
+                
+                # markdownify를 사용한 마크다운 변환
+                markdown_text = ""
+                try:
+                    from bs4 import BeautifulSoup
+                    from markdownify import markdownify as md
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    
+                    # 불필요한 요소 제거
+                    for sel in [
+                        "#cfmClHeader", "#cfmClFooter", "#cfmClSkip", ".header", ".footer",
+                        ".navigation", ".sidebar", ".banner", ".popup", ".overlay", ".sns-area",
+                    ]:
+                        for el in soup.select(sel):
+                            el.decompose()
+                    for t in soup(["script", "style", "noscript"]):
+                        t.decompose()
+                    
+                    cleaned_html = str(soup)
+                    markdown_text = md(cleaned_html, heading_style="ATX")
+                except Exception as me:
+                    logger.warning(f"Playwright markdown 변환 실패: {me}")
+                
+                logger.info(f"[MCP] Playwright 크롤링 완료: html={len(html_content)} chars, markdown={len(markdown_text)} chars")
+                return {
+                    "success": True,
+                    "url": url,
+                    "title": title,
+                    "html_content": html_content,
+                    "markdown": markdown_text,
+                    "status_code": 200,
+                }
+            finally:
+                await browser.close()
+                
     except Exception as e:
-        logger.error(f"스크린샷 촬영 실패 {url}: {str(e)}")
+        logger.error(f"Playwright 크롤링 실패: {e}")
         return {
             "success": False,
             "url": url,
-            "error": str(e)
+            "error": f"Playwright 크롤링 실패: {str(e)}"
         }
 
-@mcp.tool
-def summarize_content(text_content: str, max_length: int = 500) -> Dict[str, Any]:
-    """
-    텍스트 콘텐츠를 요약합니다.
-    간단한 추출 요약을 수행합니다.
-    """
-    try:
-        if not text_content.strip():
-            return {
-                "success": False,
-                "error": "텍스트 콘텐츠가 비어있습니다"
-            }
-        
-        # 문장 단위로 분할
-        sentences = re.split(r'[.!?]+', text_content)
-        sentences = [s.strip() for s in sentences if s.strip()]
-        
-        if not sentences:
-            return {
-                "success": False,
-                "error": "유효한 문장을 찾을 수 없습니다"
-            }
-        
-        # 간단한 추출 요약 (처음 몇 문장)
-        summary_sentences = []
-        current_length = 0
-        
-        for sentence in sentences:
-            if current_length + len(sentence) > max_length:
-                break
-            summary_sentences.append(sentence)
-            current_length += len(sentence)
-        
-        summary = '. '.join(summary_sentences)
-        if not summary.endswith('.'):
-            summary += '.'
-        
-        return {
-            "success": True,
-            "summary": summary,
-            "original_length": len(text_content),
-            "summary_length": len(summary),
-            "compression_ratio": len(summary) / len(text_content) if text_content else 0
-        }
-        
-    except Exception as e:
-        logger.error(f"요약 생성 실패: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
+# ============================================================================
+# RAG CRAWLING TOOLS (일반 웹페이지 크롤링 및 정제)
+# ============================================================================
 
 @mcp.tool
 async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> Dict[str, Any]:
     """
-    Crawl4AI를 사용하여 단건 URL을 스크랩합니다.
+    RAG용 웹 크롤링: 불필요한 요소 제거 및 마크다운 변환
+    - 헤더/푸터/네비게이션 등 제거하여 본문만 추출
+    - markdownify로 깔끔한 텍스트 변환
     - 성공 시: { success, url, title, html_content, markdown, status_code }
     - 실패 시: { success: False, url, error }
     """
@@ -365,7 +227,7 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
                 "markdown": markdown_text,
                 "status_code": status_code,
             }
-            logger.info(f"[MCP] crawl4ai_scrape completed: html={len(html_content)} chars, title='{title}'")
+            logger.info(f"[MCP] crawl4ai_scrape completed: html={len(html_content)} chars, markdown={len(markdown_text)} chars, title='{title}'")
             return payload
         finally:
             try:
@@ -411,83 +273,6 @@ async def crawl_urls_sequential(urls: List[str], selector: Optional[str] = None)
     }
 
 @mcp.tool
-def extract_html_metadata(html_content: str) -> Dict[str, Any]:
-    """
-    HTML에서 이미지와 링크 메타데이터를 추출합니다.
-    rag-scraping의 extract_html_metadata 기능을 제공합니다.
-    """
-    logger.info(f"[MCP] extract_html_metadata called with {len(html_content)} chars")
-    try:
-        from bs4 import BeautifulSoup
-        
-        soup = BeautifulSoup(html_content, 'html.parser')
-        metadata = {}
-        
-        # 이미지 정보 추출 (alt 값이 있는 경우만)
-        images = []
-        for img in soup.find_all('img'):
-            # 헤더/푸터 영역 제외
-            if img.find_parent(id=['cfmClHeader', 'cfmClFooter']):
-                continue
-                
-            alt_text = img.get('alt', '').strip()
-            # alt 값이 있고 의미있는 텍스트인 경우만 추가
-            if alt_text and len(alt_text) > 2:
-                images.append({
-                    'alt': alt_text,
-                    'src': img.get('src', '')
-                })
-        
-        # 내부 링크 정보 추출
-        urls = []
-        for link in soup.find_all('a', href=True):
-            # 헤더/푸터 영역 제외
-            if link.find_parent(id=['cfmClHeader', 'cfmClFooter']):
-                continue
-                
-            link_url = link.get('href')
-            link_text = link.get_text().strip()
-            
-            # 의미있는 링크 텍스트가 있는지 확인 (최소 2글자 이상)
-            if len(link_text) < 2:
-                continue
-                
-            # mailto/tel 제외, 의미있는 텍스트만
-            if (link_url.startswith('http') or link_url.startswith('/')) and link_text:
-                urls.append({
-                    'desc': link_text,
-                    'url': link_url
-                })
-        
-        # URL 기준 중복 제거
-        seen_urls = set()
-        unique_urls = []
-        for url_info in urls:
-            if url_info['url'] not in seen_urls:
-                seen_urls.add(url_info['url'])
-                unique_urls.append(url_info)
-        
-        # 결과 추가
-        if images:
-            metadata['images'] = images
-        if unique_urls:
-            metadata['urls'] = unique_urls
-        
-        return {
-            "success": True,
-            "metadata": metadata,
-            "images_count": len(images),
-            "urls_count": len(unique_urls)
-        }
-        
-    except Exception as e:
-        logger.error(f"HTML 메타데이터 추출 실패: {e}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-@mcp.tool
 def convert_to_json_format(
     url: str,
     title: Optional[str],
@@ -498,8 +283,10 @@ def convert_to_json_format(
     enddate: str = "2999-12-31"
 ) -> Dict[str, Any]:
     """
-    크롤링 결과를 rag-scraping의 JSON 포맷으로 변환합니다.
-    to_json.py의 기능을 제공합니다.
+    RAG용 JSON 포맷 변환: 크롤링 결과를 rag-scraping의 JSON 포맷으로 변환
+    - 텍스트 정규화 및 메타데이터 추출
+    - 이미지/링크 정보 포함
+    - to_json.py의 기능을 제공
     """
     logger.info(f"[MCP] convert_to_json_format called for URL: {url}")
     try:
@@ -605,6 +392,82 @@ def convert_to_json_format(
             "success": False,
             "error": str(e)
         }
+
+# ============================================================================
+# MENU SEARCH TOOLS (메뉴 검색 및 조회)
+# ============================================================================
+
+@mcp.tool
+async def menu_search(user_query: str, page: int = 1, size: int = 50, with_managers: bool = True) -> Dict[str, Any]:
+    """
+    사용자 질의에서 키워드를 추출해 mcp-client의 메뉴 API로 조회합니다.
+    - 키워드: 한글/영문/숫자 2자 이상 토큰만 사용하여 search 파라미터 구성
+    - with_managers=True이면 /menu-links/with-managers도 함께 호출
+    """
+    try:
+        tokens = re.findall(r"[A-Za-z0-9가-힣]{2,}", user_query)
+        search = " ".join(tokens[:5]) if tokens else ""
+
+        base_url = "http://127.0.0.1:8000"
+        async with httpx.AsyncClient(timeout=30) as client:
+            params = {"page": page, "size": size}
+            if search:
+                params["search"] = search
+            resp_links = await client.get(f"{base_url}/menu-links", params=params)
+            resp_links.raise_for_status()
+            menu_links = resp_links.json()
+
+            data = {"menu_links": menu_links, "search": search}
+            if with_managers:
+                resp_with = await client.get(f"{base_url}/menu-links/with-managers", params=params)
+                resp_with.raise_for_status()
+                data["with_managers"] = resp_with.json()
+
+            return {"success": True, "query": user_query, "data": data}
+    except Exception as e:
+        logger.error(f"menu_search failed: {e}")
+        return {"success": False, "error": str(e)}
+
+# ============================================================================
+# ARI CONTENT PROCESSING TOOLS (HTML 구조화 및 전용 파싱)
+# ============================================================================
+
+@mcp.tool  
+def ari_parse_html(html_content: str) -> Dict[str, Any]:
+    """
+    ARI 전용 HTML 파싱: 순수 HTML 파싱 및 구조화된 JSON 반환
+    - 필터링 없이 모든 텍스트 및 이미지 추출
+    - ARI 모델 스키마에 맞춘 구조화된 결과 반환
+    - RAG 크롤링과는 다른 목적의 전용 파서
+    """
+    try:
+        from bs4 import BeautifulSoup
+        from datetime import datetime
+        
+        soup = BeautifulSoup(html_content or "", 'html.parser')
+        title_el = soup.find('title')
+        title_text = title_el.get_text(strip=True) if title_el else ""
+        text = soup.get_text(separator=' ', strip=True)
+
+        images = []
+        for img in soup.find_all('img', src=True):
+            images.append({'alt': (img.get('alt') or '').strip(), 'src': img['src']})
+
+        return {
+            'success': True,
+            'result': {
+                'content': {'text': text},
+                'metadata': {
+                    'title': title_text,
+                    'extracted_at': datetime.now().isoformat(),
+                    'content_length': len(text),
+                    'images': images
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"ARI 파싱 실패: {e}")
+        return {'success': False, 'error': str(e)}
 
 async def main():
     # Start MCP server
