@@ -1,16 +1,14 @@
 'use client';
 
 import { useState, FormEvent, ChangeEvent } from 'react';
-import { ProcessingMode } from '@/app/_lib/types';
 
 interface ChatInputProps {
-  onSubmit: (url: string, mode: ProcessingMode) => void;
+  onSubmit: (url: string) => void;
   isProcessing: boolean;
 }
 
 export default function ChatInput({ onSubmit, isProcessing }: ChatInputProps) {
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<ProcessingMode>('auto');
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -24,7 +22,7 @@ export default function ChatInput({ onSubmit, isProcessing }: ChatInputProps) {
       return;
     }
     
-    onSubmit(input.trim(), mode);
+    onSubmit(input.trim());
     setInput('');
   };
 
@@ -32,9 +30,6 @@ export default function ChatInput({ onSubmit, isProcessing }: ChatInputProps) {
     setInput(e.target.value);
   };
 
-  const handleModeChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setMode(e.target.value as ProcessingMode);
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -47,30 +42,6 @@ export default function ChatInput({ onSubmit, isProcessing }: ChatInputProps) {
     <div className="home-input-container">
       <form onSubmit={handleSubmit} className="home-input-form">
         <div className="home-input-wrapper">
-          <div className="mode-selector">
-            <label className="mode-option">
-              <input
-                type="radio"
-                name="mode"
-                value="auto"
-                checked={mode === 'auto'}
-                onChange={handleModeChange}
-                disabled={isProcessing}
-              />
-              <span className="mode-option-text">AI 자동 분석</span>
-            </label>
-            <label className="mode-option">
-              <input
-                type="radio"
-                name="mode"
-                value="basic"
-                checked={mode === 'basic'}
-                onChange={handleModeChange}
-                disabled={isProcessing}
-              />
-              <span className="mode-option-text">기본 크롤링</span>
-            </label>
-          </div>
           <div className="input-field-container">
             <textarea
               className="home-input-field"

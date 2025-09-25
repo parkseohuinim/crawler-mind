@@ -9,12 +9,11 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from app.models import (
     QueryRequest, QueryResponse, ToolsResponse, HealthResponse,
-    ProcessUrlRequest, TaskResponse, TaskResult, CrawlingResult,
+    TaskResponse, TaskResult, CrawlingResult,
     AriCrawlResponse, TaskStatus
 )
 from app.infrastructure.mcp.mcp_service import mcp_service
 from app.infrastructure.llm.llm_service import llm_service  
-from app.application.crawler.crawler_service import crawler_service
 from app.application.crawler.crawling_service import crawling_service
 from app.shared.exceptions.base import MCPConnectionError, LLMQueryError
 from app.shared.database.base import get_database_session
@@ -160,73 +159,6 @@ async def get_tool_usage_stats():
         logger.error(f"Failed to get usage stats: {e}")
         raise HTTPException(status_code=500, detail=f"통계 조회 중 오류: {str(e)}")
 
-# Frontend Integration Endpoints
-
-@router.post("/process-url", response_model=TaskResponse, tags=["frontend"])
-async def process_url(request: ProcessUrlRequest):
-    """Start URL processing task"""
-    try:
-        if not mcp_service.is_connected:
-            raise HTTPException(status_code=503, detail="MCP 서버에 연결되지 않았습니다")
-        
-        # URL 형식 검증
-        if not request.url.startswith(('http://', 'https://')):
-            raise HTTPException(status_code=400, detail="올바른 URL 형식이 아닙니다 (http:// 또는 https://로 시작해야 함)")
-        
-        # 작업 생성
-        task_id = crawler_service.create_task(request.url, request.mode)
-        
-        logger.info(f"Created task {task_id} for URL: {request.url} with mode: {request.mode}")
-        
-        return TaskResponse(taskId=task_id)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to create task: {e}")
-        raise HTTPException(status_code=500, detail=f"작업 생성 중 오류: {str(e)}")
-
-@router.get("/stream/{task_id}", tags=["frontend"])
-async def stream_task_updates(task_id: str):
-    """Stream task updates via SSE"""
-    try:
-        task = crawler_service.get_task(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
-        
-        return StreamingResponse(
-            crawler_service.get_task_stream(task_id),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET",
-                "Access-Control-Allow-Headers": "Cache-Control",
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to stream task {task_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"스트림 생성 중 오류: {str(e)}")
-
-@router.get("/result/{task_id}", response_model=TaskResult, tags=["frontend"])
-async def get_task_result(task_id: str):
-    """Get task result"""
-    try:
-        task = crawler_service.get_task(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
-        
-        return task
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get task result {task_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"결과 조회 중 오류: {str(e)}")
 
 
 # ===== MENU LINKS API (Legacy Compatibility) =====

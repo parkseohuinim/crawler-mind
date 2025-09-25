@@ -4,7 +4,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   progress?: ProgressStep[];
-  result?: CrawlingResult;
+  result?: RAGCrawlingResult[];
 }
 
 export interface ProgressStep {
@@ -24,6 +24,27 @@ export interface CrawlingResult {
   error?: string;
 }
 
+// RAG 크롤링 결과 타입
+export interface RAGCrawlingResult {
+  url: string;
+  murl?: string;
+  hierarchy: string[];
+  title: string;
+  text: string;
+  startdate: string;
+  enddate: string;
+  metadata: {
+    images?: Array<{ src: string; alt?: string }>;
+    links?: Array<{ url: string; text?: string }>;
+  };
+  source?: {
+    title?: string;
+    menu_path?: string;
+  };
+  error?: string;
+  status?: string;
+}
+
 export interface SSEEvent {
   type: 'status' | 'tool_call' | 'partial' | 'final' | 'error';
   data: any;
@@ -34,7 +55,6 @@ export interface TaskResponse {
   taskId: string;
 }
 
-export type ProcessingMode = 'auto' | 'basic';
 
 // JSON 비교 관련 타입
 export interface ManagerInfo {

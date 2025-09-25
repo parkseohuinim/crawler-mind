@@ -16,8 +16,8 @@ export async function GET(
 
     const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
-    // MCP Client의 SSE 스트림에 연결
-    const response = await fetch(`${API_BASE_URL}/api/stream/${taskId}`, {
+    // MCP Client의 RAG 크롤링 SSE 스트림에 연결
+    const response = await fetch(`${API_BASE_URL}/api/rag-crawl/${taskId}/stream`, {
       headers: {
         'Accept': 'text/event-stream',
         'Cache-Control': 'no-cache',

@@ -18,8 +18,8 @@ export async function GET(
 
     const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
-    // MCP Client의 결과 조회 엔드포인트 호출
-    const response = await fetch(`${API_BASE_URL}/api/result/${taskId}`, {
+    // MCP Client의 RAG 크롤링 결과 조회 엔드포인트 호출
+    const response = await fetch(`${API_BASE_URL}/api/rag-crawl/${taskId}`, {
       method: 'GET',
       cache: 'no-store',
       headers: {

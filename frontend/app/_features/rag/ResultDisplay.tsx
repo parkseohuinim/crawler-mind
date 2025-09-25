@@ -1,9 +1,9 @@
 'use client';
 
-import { CrawlingResult } from '@/app/_lib/types';
+import { RAGCrawlingResult } from '@/app/_lib/types';
 
 interface ResultDisplayProps {
-  result: CrawlingResult;
+  result: RAGCrawlingResult[];
 }
 
 export default function ResultDisplay({ result }: ResultDisplayProps) {
@@ -42,12 +42,12 @@ export default function ResultDisplay({ result }: ResultDisplayProps) {
 
   // CSV 다운로드는 요구사항에 따라 제거됨
 
-  if (result.error) {
+  if (!result || result.length === 0) {
     return (
       <div className="result-container">
-        <div className="result-title">오류 발생</div>
-        <div style={{ color: '#f56565', fontSize: '0.875rem' }}>
-          {result.error}
+        <div className="result-title">RAG 크롤링 결과</div>
+        <div style={{ color: '#a0aec0', fontSize: '0.875rem' }}>
+          결과가 없습니다.
         </div>
       </div>
     );

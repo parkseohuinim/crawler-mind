@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Message, ProcessingMode, SSEEvent, ProgressStep, CrawlingResult, TaskResponse } from '@/app/_lib/types';
+import { Message, SSEEvent, ProgressStep, CrawlingResult, RAGCrawlingResult, TaskResponse } from '@/app/_lib/types';
 import { useSSE } from './useSSE';
 
 export function useCrawler() {
@@ -59,7 +59,7 @@ export function useCrawler() {
             
           case 'final':
             // 최종 결과 업데이트
-            assistantMessage.result = event.data as CrawlingResult;
+            assistantMessage.result = event.data as RAGCrawlingResult[];
             if (assistantMessage.progress) {
               assistantMessage.progress = assistantMessage.progress.map(step => ({
                 ...step,
@@ -164,7 +164,7 @@ export function useCrawler() {
     onComplete: handleSSEComplete,
   });
 
-  const processUrl = useCallback(async (url: string, mode: ProcessingMode) => {
+  const processUrl = useCallback(async (url: string) => {
     if (isProcessing) return;
 
     // 사용자 메시지 추가

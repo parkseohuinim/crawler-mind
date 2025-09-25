@@ -15,13 +15,13 @@ export async function POST(request: NextRequest) {
     // MCP Client 백엔드 서버 URL (환경변수로 설정)
     const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
-    // MCP Client의 process-url 엔드포인트 호출
-    const response = await fetch(`${API_BASE_URL}/api/process-url`, {
+    // MCP Client의 rag-crawl 엔드포인트 호출
+    const response = await fetch(`${API_BASE_URL}/api/rag-crawl`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url, mode }),
+      body: JSON.stringify({ urls: url }),
     });
 
     if (!response.ok) {

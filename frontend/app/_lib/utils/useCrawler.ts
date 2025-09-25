@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Message, ProcessingMode, SSEEvent, ProgressStep, CrawlingResult, TaskResponse } from '@/app/_lib/types';
+import { Message, SSEEvent, ProgressStep, CrawlingResult, RAGCrawlingResult, TaskResponse } from '@/app/_lib/types';
 import { useSSE } from './useSSE';
 
 export function useCrawler() {
@@ -66,7 +66,7 @@ export function useCrawler() {
             
           case 'final':
             // 최종 결과 업데이트
-            assistantMessage.result = event.data as CrawlingResult;
+            assistantMessage.result = event.data as RAGCrawlingResult[];
             if (assistantMessage.progress) {
               assistantMessage.progress = assistantMessage.progress.map(step => ({
                 ...step,
@@ -100,7 +100,7 @@ export function useCrawler() {
     // SSE 완료 후 백엔드에서 최종 결과를 한번 더 조회하여 스냅샷을 보장
     if (currentTaskId) {
       try {
-        const res = await fetch(`/api/result/${currentTaskId}`);
+        const res = await fetch(`/api/rag-crawl/${currentTaskId}`);
         if (res.ok) {
           const data = await res.json();
           setMessages(prev => {
@@ -126,7 +126,7 @@ export function useCrawler() {
     // 에러가 와도 최종 결과가 생성되어 있을 수 있으므로 즉시 결과 조회 시도
     if (currentTaskId) {
       try {
-        const res = await fetch(`/api/result/${currentTaskId}`);
+        const res = await fetch(`/api/rag-crawl/${currentTaskId}`);
         if (res.ok) {
           const data = await res.json();
           setMessages(prev => {
@@ -171,7 +171,7 @@ export function useCrawler() {
     onComplete: handleSSEComplete,
   });
 
-  const processUrl = useCallback(async (url: string, mode: ProcessingMode) => {
+  const processUrl = useCallback(async (url: string) => {
     if (isProcessing) return;
 
     // 사용자 메시지 추가
@@ -195,13 +195,13 @@ export function useCrawler() {
     setIsProcessing(true);
 
     try {
-      // 작업 시작 요청
-      const response = await fetch('/api/process-url', {
+      // RAG 크롤링 작업 시작 요청
+      const response = await fetch('/api/rag-crawl', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url, mode }),
+        body: JSON.stringify({ urls: url }),
       });
 
       if (!response.ok) {

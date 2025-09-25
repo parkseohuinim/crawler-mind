@@ -54,8 +54,11 @@ services:
     # ❌ 외부 노출 제거 (ports 삭제)
     environment:
       - PYTHONUNBUFFERED=1
+      - MCP_CLIENT_API_URL=http://mcp-client:8000/api  # MCP 서버 → 클라이언트 API 통신
     networks:
       - app-network
+    depends_on:
+      - mcp-client  # MCP 클라이언트가 먼저 시작되도록 보장
     restart: unless-stopped
     # ❌ healthcheck 제거 (FastMCP는 기본 /health 엔드포인트 없음)
     # healthcheck:

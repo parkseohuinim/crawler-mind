@@ -1,14 +1,23 @@
 """LLM Service - Handles OpenAI API interactions"""
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional
 import json
 import logging
 import tiktoken
+import numpy as np
 from openai import AsyncOpenAI
 from app.config import settings
 from app.infrastructure.mcp.mcp_service import mcp_service
 from app.shared.exceptions.base import LLMQueryError
 
 logger = logging.getLogger(__name__)
+
+# 임베딩 모델 (지연 로딩)
+try:
+    from sentence_transformers import SentenceTransformer
+    EMBEDDING_AVAILABLE = True
+except ImportError:
+    EMBEDDING_AVAILABLE = False
+    logger.warning("sentence-transformers not available, falling back to keyword-based intent detection")
 
 class LLMService:
     """Service class for managing LLM interactions"""
@@ -19,6 +28,208 @@ class LLMService:
             self.tokenizer = tiktoken.encoding_for_model("gpt-4o")
         except Exception:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        
+        # 임베딩 모델 초기화 (지연 로딩)
+        self._embedding_model: Optional[SentenceTransformer] = None
+        self._intent_examples = self._get_intent_examples()
+        
+    def _get_embedding_model(self) -> Optional[SentenceTransformer]:
+        """임베딩 모델 지연 로딩"""
+        if not EMBEDDING_AVAILABLE:
+            return None
+            
+        if self._embedding_model is None:
+            try:
+                # 다국어 지원 경량 모델 사용
+                self._embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                logger.info("🎯 임베딩 모델 로드 완료: paraphrase-multilingual-MiniLM-L12-v2")
+            except Exception as e:
+                logger.error(f"임베딩 모델 로드 실패: {e}")
+                return None
+        
+        return self._embedding_model
+    
+    def _get_intent_examples(self) -> Dict[str, List[str]]:
+        """의도별 예시 문장들"""
+        return {
+            'web_crawling': [
+                "웹사이트를 크롤링해주세요",
+                "이 URL의 내용을 가져와주세요",
+                "페이지를 스크래핑해서 분석해주세요",
+                "사이트 데이터를 수집해주세요",
+                "웹페이지 정보를 추출해주세요"
+            ],
+            'system_status': [
+                "시스템 상태를 확인해주세요",
+                "서버가 정상 작동하는지 체크해주세요",
+                "헬스체크를 실행해주세요",
+                "현재 시스템 통계를 보여주세요",
+                "서비스 상태를 알려주세요"
+            ],
+            'text_analysis': [
+                "이 텍스트를 요약해주세요",
+                "내용을 분석해서 정리해주세요",
+                "문서의 핵심 내용을 추출해주세요",
+                "텍스트에서 주요 정보를 찾아주세요",
+                "내용을 간단히 요약해주세요"
+            ],
+            'html_processing': [
+                "HTML 파일을 처리해주세요",
+                "컨플루언스 문서를 변환해주세요",
+                "업로드한 파일을 분석해주세요",
+                "HTML에서 메인 컨텐츠를 추출해주세요",
+                "ARI 파일을 파싱해주세요"
+            ],
+            'db_query': [
+                "메뉴 정보를 조회해주세요",
+                "링크 데이터를 찾아주세요",
+                "담당자 정보를 검색해주세요",
+                "데이터베이스에서 정보를 가져와주세요",
+                "매니저 목록을 보여주세요"
+            ],
+            'database_schema': [
+                "메뉴 테이블 구조를 보여주세요",
+                "데이터베이스 스키마를 알려주세요",
+                "컬럼명을 보여주세요",
+                "테이블 필드를 알려주세요",
+                "메뉴 컬럼 정보를 확인해주세요",
+                "데이터 구조를 설명해주세요"
+            ],
+            'rag_query': [
+                "문서에서 검색해주세요",
+                "지식베이스에서 찾아주세요",
+                "RAG로 질문에 답변해주세요",
+                "등록된 문서에서 정보를 찾아주세요",
+                "벡터 검색을 실행해주세요"
+            ]
+        }
+    
+    async def _classify_intent_with_embedding(self, question: str) -> List[str]:
+        """임베딩 기반 의도 분류"""
+        model = self._get_embedding_model()
+        if not model:
+            return []
+        
+        try:
+            # 질문 임베딩
+            question_embedding = model.encode([question])
+            
+            detected_intents = []
+            similarity_threshold = 0.6  # 유사도 임계값
+            
+            # 각 의도별로 유사도 계산
+            for intent, examples in self._intent_examples.items():
+                example_embeddings = model.encode(examples)
+                
+                # 질문과 각 예시 간의 코사인 유사도 계산
+                similarities = np.dot(question_embedding, example_embeddings.T).flatten()
+                max_similarity = float(np.max(similarities))
+                
+                logger.debug(f"📊 의도 '{intent}' 유사도: {max_similarity:.3f}")
+                
+                if max_similarity > similarity_threshold:
+                    detected_intents.append((intent, max_similarity))
+            
+            # 유사도 순으로 정렬하여 상위 3개만 선택
+            detected_intents.sort(key=lambda x: x[1], reverse=True)
+            result = [intent for intent, _ in detected_intents[:3]]
+            
+            logger.info(f"🎯 임베딩 기반 의도 분류: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"임베딩 기반 의도 분류 실패: {e}")
+            return []
+    
+    async def _classify_intent_with_llm(self, question: str) -> List[str]:
+        """LLM 프롬프팅 기반 의도 분류"""
+        try:
+            prompt = f"""다음 사용자 질문을 분석하여 해당하는 의도 카테고리를 선택하세요.
+
+카테고리 설명:
+- web_crawling: 웹페이지 크롤링, 스크래핑, URL 데이터 수집
+- system_status: 시스템 상태 확인, 헬스체크, 서버 모니터링  
+- text_analysis: 텍스트 요약, 분석, 정보 추출
+- html_processing: HTML 파일 처리, 컨플루언스 문서 변환, ARI 파일 파싱
+- db_query: 데이터베이스 조회, 메뉴/링크/담당자 정보 검색 (실제 데이터)
+- database_schema: 데이터베이스 스키마 조회, 테이블 구조, 컬럼 정보 확인
+- rag_query: 문서 검색, 지식베이스 질의, RAG 기반 질문답변
+
+사용자 질문: "{question}"
+
+위 질문에 가장 적합한 카테고리 1-3개를 JSON 배열 형태로 응답하세요.
+예시: ["web_crawling", "text_analysis"]
+
+응답:"""
+
+            response = await self._client.chat.completions.create(
+                model="gpt-4o-mini",  # 빠르고 저렴한 모델 사용
+                messages=[
+                    {"role": "system", "content": "당신은 사용자 의도를 정확히 분류하는 AI 어시스턴트입니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=100,
+                temperature=0.1  # 일관성을 위해 낮은 온도
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            # JSON 파싱 시도
+            try:
+                if result_text.startswith('[') and result_text.endswith(']'):
+                    intents = json.loads(result_text)
+                else:
+                    # 텍스트에서 JSON 부분 추출
+                    import re
+                    json_match = re.search(r'\[.*?\]', result_text)
+                    if json_match:
+                        intents = json.loads(json_match.group())
+                    else:
+                        intents = []
+                
+                # 유효한 의도만 필터링
+                valid_intents = [intent for intent in intents if intent in self._intent_examples.keys()]
+                
+                logger.info(f"🤖 LLM 기반 의도 분류: {valid_intents}")
+                return valid_intents
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"LLM 응답 JSON 파싱 실패: {result_text}, 오류: {e}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"LLM 기반 의도 분류 실패: {e}")
+            return []
+    
+    async def _classify_intent_hybrid(self, question: str) -> List[str]:
+        """하이브리드 의도 분류 (임베딩 + LLM)"""
+        embedding_intents = await self._classify_intent_with_embedding(question)
+        llm_intents = await self._classify_intent_with_llm(question)
+        
+        # 두 결과를 조합하여 신뢰도 높은 의도 선택
+        combined_intents = []
+        
+        # 1. 두 방법 모두에서 감지된 의도 (높은 신뢰도)
+        common_intents = list(set(embedding_intents) & set(llm_intents))
+        combined_intents.extend(common_intents)
+        
+        # 2. 임베딩에서만 감지된 의도 (중간 신뢰도)
+        embedding_only = [i for i in embedding_intents if i not in common_intents]
+        combined_intents.extend(embedding_only[:2])  # 상위 2개만
+        
+        # 3. LLM에서만 감지된 의도 (중간 신뢰도)
+        llm_only = [i for i in llm_intents if i not in common_intents]
+        combined_intents.extend(llm_only[:1])  # 상위 1개만
+        
+        # 중복 제거 및 최대 3개로 제한
+        final_intents = list(dict.fromkeys(combined_intents))[:3]
+        
+        logger.info(f"🔄 하이브리드 의도 분류:")
+        logger.info(f"   임베딩: {embedding_intents}")
+        logger.info(f"   LLM: {llm_intents}")
+        logger.info(f"   최종: {final_intents}")
+        
+        return final_intents
     
     def _format_tools_for_openai(self, available_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -55,7 +266,7 @@ class LLMService:
         """Execute a query against the LLM with available tools"""
         try:
             # 1단계: 의도 분류 및 도구 필터링 (토큰 제한 해결)
-            filtered_tools = self._filter_tools_by_intent(question, available_tools)
+            filtered_tools = await self._filter_tools_by_intent(question, available_tools)
             
             # Format tools for OpenAI
             formatted_tools = self._format_tools_for_openai(filtered_tools)
@@ -75,7 +286,7 @@ Available tools (dynamic):
 Tool usage principles:
 1) If a URL is present → use crawl4ai_scrape or crawl_urls_sequential
 2) For system status → use health_check
-3) For text summarization/clean-up → use summarize_content
+3) For structured data conversion → use convert_to_json_format
 4) For menu/DB queries → use menu_search
 5) For HTML/Confluence content → use ari_extract_main_blocks and/or ari_markdown_to_json and/or convert_to_json_format
 
@@ -152,61 +363,105 @@ Response policy:
             logger.error(f"LLM query failed: {e}")
             raise LLMQueryError(f"LLM 쿼리 실행 중 오류: {str(e)}")
     
-    def _filter_tools_by_intent(self, question: str, available_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _filter_tools_by_intent(self, question: str, available_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        질문의 의도를 분석하여 관련된 도구만 필터링
+        임베딩 + LLM 프롬프팅 기반 의도 분석으로 관련 도구 필터링
         """
+        try:
+            # 하이브리드 의도 분류 실행
+            detected_intents = await self._classify_intent_hybrid(question)
+            
+            # 폴백: 의도가 감지되지 않으면 키워드 기반 분석 사용
+            if not detected_intents:
+                logger.warning("🔄 하이브리드 분류 실패, 키워드 기반 폴백 사용")
+                detected_intents = self._fallback_keyword_intent(question)
+            
+            # 의도별 도구 매핑 (확장된 버전)
+            tool_mapping = {
+                'web_crawling': [
+                    'crawl4ai_scrape', 'crawl_urls_sequential', 'playwright_scrape',
+                    'scrape_webpage', 'take_screenshot'
+                ],
+                'system_status': [
+                    'health_check', 'get_system_stats', 'monitor_services'
+                ],
+                'text_analysis': [
+                    'extract_keywords', 'analyze_sentiment',
+                    'text_classification', 'content_analysis'
+                ],
+                'html_processing': [
+                    'ari_extract_main_blocks', 'ari_markdown_to_json', 'convert_to_json_format',
+                    'parse_html', 'extract_tables', 'convert_markdown'
+                ],
+                'db_query': [
+                    'menu_search', 'search_database', 'query_menu_links',
+                    'get_manager_info', 'search_records'
+                ],
+                'database_schema': [
+                    'get_database_schema'
+                ],
+                'rag_query': [
+                    'rag_search', 'vector_search', 'document_query',
+                    'knowledge_base_search', 'semantic_search'
+                ]
+            }
+            
+            # 관련 도구들 수집
+            relevant_tools = []
+            for intent in detected_intents:
+                relevant_tools.extend(tool_mapping.get(intent, []))
+            
+            # 스마트 기본 도구 선택 (의도에 따라 다르게)
+            smart_essential_tools = []
+            if 'web_crawling' in detected_intents or any('http' in question.lower() for protocol in ['http', 'www', '.com', '.kr']):
+                smart_essential_tools.extend(['crawl4ai_scrape'])
+            if 'system_status' in detected_intents or not detected_intents:
+                smart_essential_tools.extend(['health_check'])
+            if 'text_analysis' in detected_intents:
+                smart_essential_tools.extend(['convert_to_json_format'])
+                
+            relevant_tools.extend(smart_essential_tools)
+            
+            # 중복 제거
+            relevant_tools = list(set(relevant_tools))
+            
+            # 도구 필터링
+            filtered_tools = []
+            for tool in available_tools:
+                tool_name = tool.get('function', {}).get('name', '')
+                if tool_name in relevant_tools:
+                    filtered_tools.append(tool)
+            
+            logger.info(f"🎯 최종 필터링 결과: {len(filtered_tools)}개 도구 선택 (전체 {len(available_tools)}개 중)")
+            logger.info(f"   선택된 도구: {[t.get('function', {}).get('name', '') for t in filtered_tools]}")
+            
+            return filtered_tools if filtered_tools else available_tools[:10]  # 최대 10개로 제한
+            
+        except Exception as e:
+            logger.error(f"의도 기반 필터링 실패, 전체 도구 사용: {e}")
+            return available_tools[:15]  # 오류 시 상위 15개 도구 사용
+    
+    def _fallback_keyword_intent(self, question: str) -> List[str]:
+        """키워드 기반 폴백 의도 분석 (기존 방식)"""
         question_lower = question.lower()
         
-        # 의도별 키워드 매핑
         intent_keywords = {
-            'web_crawling': ['크롤링', 'crawl', 'url', '웹사이트', '웹페이지', '스크래핑', 'scrape'],
+            'web_crawling': ['크롤링', 'crawl', 'url', '웹사이트', '웹페이지', '스크래핑', 'scrape', 'http'],
             'system_status': ['상태', 'status', 'health', '서버', '통계', 'statistics'],
             'text_analysis': ['요약', 'summarize', '분석', 'analyze', '추출', 'extract', '텍스트'],
             'html_processing': ['html', '파일', 'file', 'confluence', '업로드', 'upload', 'ari'],
             'db_query': ['메뉴', 'menu', '링크', 'link', '매니저', 'manager', '담당자', '조회', 'query'],
+            'database_schema': ['스키마', 'schema', '구조', '컬럼', 'column', '테이블', 'table', '필드', 'field', '데이터구조'],
             'rag_query': ['rag', '검색', 'search', '문서', 'document', '지식', 'knowledge']
         }
         
-        # 의도 감지
         detected_intents = []
         for intent, keywords in intent_keywords.items():
             if any(keyword in question_lower for keyword in keywords):
                 detected_intents.append(intent)
         
-        # 의도별 도구 매핑
-        tool_mapping = {
-            'web_crawling': ['crawl4ai_scrape', 'crawl_urls_sequential'],
-            'system_status': ['health_check'],
-            'text_analysis': ['summarize_content'],
-            'html_processing': ['ari_extract_main_blocks', 'ari_markdown_to_json', 'convert_to_json_format'],
-            'db_query': ['menu_search'],
-            'rag_query': []
-        }
-        
-        # 관련 도구들 수집
-        relevant_tools = []
-        for intent in detected_intents:
-            relevant_tools.extend(tool_mapping.get(intent, []))
-        
-        # 기본 도구들 (항상 포함)
-        essential_tools = ['health_check', 'crawl4ai_scrape', 'summarize_content']
-        relevant_tools.extend(essential_tools)
-        
-        # 중복 제거
-        relevant_tools = list(set(relevant_tools))
-        
-        # 도구 필터링
-        filtered_tools = []
-        for tool in available_tools:
-            tool_name = tool.get('function', {}).get('name', '')
-            if tool_name in relevant_tools:
-                filtered_tools.append(tool)
-        
-        logger.info(f"🔍 의도 분류: {detected_intents}")
-        logger.info(f"🎯 필터링된 도구: {[t.get('function', {}).get('name', '') for t in filtered_tools]}")
-        
-        return filtered_tools if filtered_tools else available_tools[:10]  # 최대 10개로 제한
+        logger.info(f"🔄 키워드 기반 의도 분류: {detected_intents}")
+        return detected_intents
     
     def _get_tool_categories_description(self, tools: List[Dict[str, Any]]) -> str:
         """
@@ -305,7 +560,7 @@ Response policy:
         """
         try:
             # 1단계: 의도 분류 및 도구 필터링
-            filtered_tools = self._filter_tools_by_intent(question, available_tools)
+            filtered_tools = await self._filter_tools_by_intent(question, available_tools)
             
             # 2차 요청 - 스트리밍 모드
             logger.warning(f"🔧 LLM tools available: {len(filtered_tools)} tools (filtered from {len(available_tools)})")
@@ -329,7 +584,7 @@ Available tools: {len(filtered_tools)} (filtered from {len(available_tools)} tot
 Tool usage principles:
 1) If a URL is present → use crawl4ai_scrape or crawl_urls_sequential
 2) For system status → use health_check
-3) For text summarization/clean-up → use summarize_content
+3) For structured data conversion → use convert_to_json_format
 4) For menu/DB queries → use menu_search
 5) For HTML/Confluence content → use ari_extract_main_blocks and/or ari_markdown_to_json and/or convert_to_json_format
 

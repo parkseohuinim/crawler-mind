@@ -1,7 +1,7 @@
 """Menu repository interface and implementation"""
 from abc import ABC, abstractmethod
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional, Tuple
 
@@ -90,7 +90,13 @@ class MenuRepository(IMenuRepository):
         count_query = select(func.count(MenuLink.id))
         
         if search:
-            search_filter = MenuLink.menu_path.ilike(f"%{search}%")
+            # 다중 컬럼 검색: menu_path, document_id, pc_url, mobile_url 모두 검색
+            search_filter = or_(
+                MenuLink.menu_path.ilike(f"%{search}%"),
+                MenuLink.document_id.ilike(f"%{search}%"),
+                MenuLink.pc_url.ilike(f"%{search}%"),
+                MenuLink.mobile_url.ilike(f"%{search}%")
+            )
             query = query.where(search_filter)
             count_query = count_query.where(search_filter)
         
@@ -117,7 +123,13 @@ class MenuRepository(IMenuRepository):
         ).where(MenuManagerInfo.menu_id.is_(None))
         
         if search:
-            search_filter = MenuLink.menu_path.ilike(f"%{search}%")
+            # 다중 컬럼 검색: menu_path, document_id, pc_url, mobile_url 모두 검색
+            search_filter = or_(
+                MenuLink.menu_path.ilike(f"%{search}%"),
+                MenuLink.document_id.ilike(f"%{search}%"),
+                MenuLink.pc_url.ilike(f"%{search}%"),
+                MenuLink.mobile_url.ilike(f"%{search}%")
+            )
             query = query.where(search_filter)
             count_query = count_query.where(search_filter)
         
@@ -139,7 +151,13 @@ class MenuRepository(IMenuRepository):
         count_query = select(func.count(MenuLink.id))
         
         if search:
-            search_filter = MenuLink.menu_path.ilike(f"%{search}%")
+            # 다중 컬럼 검색: menu_path, document_id, pc_url, mobile_url 모두 검색
+            search_filter = or_(
+                MenuLink.menu_path.ilike(f"%{search}%"),
+                MenuLink.document_id.ilike(f"%{search}%"),
+                MenuLink.pc_url.ilike(f"%{search}%"),
+                MenuLink.mobile_url.ilike(f"%{search}%")
+            )
             query = query.where(search_filter)
             count_query = count_query.where(search_filter)
         
@@ -197,7 +215,15 @@ class MenuRepository(IMenuRepository):
         count_query = select(func.count(MenuManagerInfo.id)).join(MenuLink, MenuManagerInfo.menu_id == MenuLink.id)
         
         if search:
-            search_filter = MenuLink.menu_path.ilike(f"%{search}%")
+            # 다중 컬럼 검색: menu_path, document_id, pc_url, mobile_url + team_name, manager_names
+            search_filter = or_(
+                MenuLink.menu_path.ilike(f"%{search}%"),
+                MenuLink.document_id.ilike(f"%{search}%"),
+                MenuLink.pc_url.ilike(f"%{search}%"),
+                MenuLink.mobile_url.ilike(f"%{search}%"),
+                MenuManagerInfo.team_name.ilike(f"%{search}%"),
+                MenuManagerInfo.manager_names.ilike(f"%{search}%")
+            )
             query = query.where(search_filter)
             count_query = count_query.where(search_filter)
         

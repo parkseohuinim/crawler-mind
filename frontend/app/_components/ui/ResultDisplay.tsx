@@ -1,18 +1,18 @@
 'use client';
 
-import { CrawlingResult } from '@/app/_lib/types';
+import { RAGCrawlingResult } from '@/app/_lib/types';
 
 interface ResultDisplayProps {
-  result: CrawlingResult;
+  result: RAGCrawlingResult[];
 }
 
 export default function ResultDisplay({ result }: ResultDisplayProps) {
-  if (result.error) {
+  if (!result || result.length === 0) {
     return (
       <div className="result-container">
-        <div className="result-title">오류 발생</div>
-        <div style={{ color: '#f56565', fontSize: '0.875rem' }}>
-          {result.error}
+        <div className="result-title">RAG 크롤링 결과</div>
+        <div style={{ color: '#a0aec0', fontSize: '0.875rem' }}>
+          결과가 없습니다.
         </div>
       </div>
     );
@@ -20,64 +20,65 @@ export default function ResultDisplay({ result }: ResultDisplayProps) {
 
   return (
     <div className="result-container">
-      <div className="result-title">크롤링 결과</div>
+      <div className="result-title">RAG 크롤링 결과 ({result.length}개)</div>
       
-      {result.title && (
-        <div className="result-item">
-          <span className="result-label">페이지 제목:</span>
-          <span className="result-value">{result.title}</span>
-        </div>
-      )}
-      
-      {result.textLength != null && result.textLength !== undefined && (
-        <div className="result-item">
-          <span className="result-label">텍스트 길이:</span>
-          <span className="result-value">{result.textLength.toLocaleString()}자</span>
-        </div>
-      )}
-      
-      {result.linkCount !== undefined && (
-        <div className="result-item">
-          <span className="result-label">링크 개수:</span>
-          <span className="result-value">{result.linkCount}개</span>
-        </div>
-      )}
-      
-      {result.summary && (
-        <div className="result-item">
-          <span className="result-label">요약:</span>
-          <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', lineHeight: '1.5' }}>
-            {result.summary}
+      {result.map((item, index) => (
+        <div key={index} className="result-item" style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid #e2e8f0', borderRadius: '0.5rem' }}>
+          <div className="result-item">
+            <span className="result-label">URL:</span>
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="result-value" style={{ color: '#3182ce' }}>
+              {item.url}
+            </a>
           </div>
-        </div>
-      )}
-      
-      {result.links && result.links.length > 0 && (
-        <div className="result-links">
-          <div className="result-links-title">발견된 링크들:</div>
-          <div className="result-links-list">
-            {result.links.slice(0, 10).map((link, index) => {
-              const safeHref = link && link.trim().toLowerCase().startsWith('javascript:') ? '#' : link;
-              return (
-                <a
-                  key={index}
-                  href={safeHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="result-link"
-                >
-                  {link}
-                </a>
-              );
-            })}
-            {result.links.length > 10 && (
-              <div style={{ color: '#a0aec0', fontSize: '0.75rem', padding: '0.5rem 0' }}>
-                ... 그 외 {result.links.length - 10}개 링크
-              </div>
-            )}
+          
+          {item.murl && (
+            <div className="result-item">
+              <span className="result-label">모바일 URL:</span>
+              <a href={item.murl} target="_blank" rel="noopener noreferrer" className="result-value" style={{ color: '#3182ce' }}>
+                {item.murl}
+              </a>
+            </div>
+          )}
+          
+          <div className="result-item">
+            <span className="result-label">제목:</span>
+            <span className="result-value">{item.title}</span>
           </div>
+          
+          {item.hierarchy && item.hierarchy.length > 0 && (
+            <div className="result-item">
+              <span className="result-label">계층구조:</span>
+              <span className="result-value">{item.hierarchy.join(' > ')}</span>
+            </div>
+          )}
+          
+          <div className="result-item">
+            <span className="result-label">텍스트 길이:</span>
+            <span className="result-value">{item.text.length.toLocaleString()}자</span>
+          </div>
+          
+          {item.metadata?.images && item.metadata.images.length > 0 && (
+            <div className="result-item">
+              <span className="result-label">이미지 개수:</span>
+              <span className="result-value">{item.metadata.images.length}개</span>
+            </div>
+          )}
+          
+          {item.metadata?.links && item.metadata.links.length > 0 && (
+            <div className="result-item">
+              <span className="result-label">링크 개수:</span>
+              <span className="result-value">{item.metadata.links.length}개</span>
+            </div>
+          )}
+          
+          {item.error && (
+            <div className="result-item">
+              <span className="result-label" style={{ color: '#f56565' }}>오류:</span>
+              <span className="result-value" style={{ color: '#f56565' }}>{item.error}</span>
+            </div>
+          )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
