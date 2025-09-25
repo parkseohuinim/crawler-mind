@@ -273,12 +273,129 @@ async def crawl_urls_sequential(urls: List[str], selector: Optional[str] = None)
     }
 
 @mcp.tool
+def extract_headings_from_html(
+    html_content: str,
+    heading_tags: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """HTML에서 heading 태그(H1~H6 등)를 추출"""
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html_content or "", "html.parser")
+        tags = heading_tags or ["h1", "h2", "h3", "h4", "h5", "h6"]
+        headings: List[str] = []
+        for tag in tags:
+            for element in soup.find_all(tag):
+                text = element.get_text(strip=True)
+                if text:
+                    headings.append(text)
+        return {
+            "success": True,
+            "headings": headings,
+            "count": len(headings),
+        }
+    except Exception as exc:
+        logger.error(f"extract_headings_from_html 실패: {exc}")
+        return {"success": False, "error": str(exc)}
+
+
+@mcp.tool
+async def extract_image_metadata(
+    html_content: str,
+    base_url: Optional[str] = None,
+    min_alt_length: int = 2
+) -> Dict[str, Any]:
+    """HTML에서 이미지 정보(src, alt 등)를 추출"""
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html_content or "", "html.parser")
+        images: List[Dict[str, str]] = []
+        for element in soup.find_all("img"):
+            parent = element.find_parent(id=["cfmClHeader", "cfmClFooter"])
+            if parent:
+                continue
+
+            alt_text = (element.get("alt") or "").strip()
+            if len(alt_text) < min_alt_length:
+                continue
+
+            src = element.get("src") or ""
+            if base_url and src and not src.startswith("http"):
+                src = urljoin(base_url, src)
+
+            images.append({"alt": alt_text, "src": src})
+
+        return {
+            "success": True,
+            "images": images,
+            "count": len(images),
+        }
+    except Exception as exc:
+        logger.error(f"extract_image_metadata 실패: {exc}")
+        return {"success": False, "error": str(exc)}
+
+
+@mcp.tool
+async def extract_links(
+    html_content: str,
+    base_url: Optional[str] = None,
+    min_text_length: int = 2
+) -> Dict[str, Any]:
+    """HTML에서 의미 있는 앵커 링크를 추출"""
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html_content or "", "html.parser")
+        links: List[Dict[str, str]] = []
+        for element in soup.find_all("a", href=True):
+            parent = element.find_parent(id=["cfmClHeader", "cfmClFooter"])
+            if parent:
+                continue
+
+            text = element.get_text(strip=True)
+            if len(text) < min_text_length:
+                continue
+
+            href = element.get("href")
+            if not href:
+                continue
+
+            if base_url and href.startswith("/"):
+                href = urljoin(base_url, href)
+
+            if href.startswith(("http://", "https://")):
+                links.append({"text": text, "url": href})
+
+        return {
+            "success": True,
+            "links": links,
+            "count": len(links),
+        }
+    except Exception as exc:
+        logger.error(f"extract_links 실패: {exc}")
+        return {"success": False, "error": str(exc)}
+
+
+@mcp.tool
+def extract_meta_title(html_content: str) -> Dict[str, Any]:
+    """HTML의 meta og:title 또는 title 태그를 추출"""
+    try:
+        title = extract_meta_title_from_html(html_content)
+        return {"success": bool(title), "title": title or ""}
+    except Exception as exc:
+        logger.error(f"extract_meta_title 실패: {exc}")
+        return {"success": False, "error": str(exc)}
+
+
+@mcp.tool
 def convert_to_json_format(
     url: str,
     title: Optional[str],
     markdown_content: str,
     html_content: str,
     hierarchy: Optional[List[str]] = None,
+    murl: Optional[str] = None,
     startdate: str = "1900-01-01",
     enddate: str = "2999-12-31"
 ) -> Dict[str, Any]:
@@ -291,107 +408,105 @@ def convert_to_json_format(
     logger.info(f"[MCP] convert_to_json_format called for URL: {url}")
     try:
         import unicodedata
-        
-        # 텍스트 정규화
-        title = unicodedata.normalize('NFC', title or "제목 없음")
+
+        title = unicodedata.normalize('NFC', (title or "제목 없음"))
         url = unicodedata.normalize('NFC', url)
-        
-        # 마크다운 내용 처리 (\n -> \\n)
-        final_content = markdown_content.strip().replace("\n", "\\n")
+
+        final_content = (markdown_content or "").strip().replace("\n", "\\n")
         final_content = unicodedata.normalize('NFC', final_content)
-        
-        # hierarchy 처리 (현재 메뉴 정보가 없어 주석 처리)
-        # if not hierarchy:
-        #     hierarchy = ["기본"]
-        # hierarchy = [unicodedata.normalize('NFC', h) for h in hierarchy]
-        
-        # HTML에서 메타데이터 추출 (직접 구현)
-        metadata = {}
+
+        normalized_hierarchy: Optional[List[str]] = None
+        if hierarchy:
+            normalized_hierarchy = [unicodedata.normalize('NFC', item) for item in hierarchy if item]
+
+        metadata: Dict[str, Any] = {}
         try:
             from bs4 import BeautifulSoup
-            
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # 이미지 정보 추출 (alt 값이 있는 경우만)
+
+            soup = BeautifulSoup(html_content or "", 'html.parser')
+
             images = []
             for img in soup.find_all('img'):
-                # 헤더/푸터 영역 제외
                 if img.find_parent(id=['cfmClHeader', 'cfmClFooter']):
                     continue
-                    
-                alt_text = img.get('alt', '').strip()
-                # alt 값이 있고 의미있는 텍스트인 경우만 추가
-                if alt_text and len(alt_text) > 2:
-                    images.append({
-                        'alt': alt_text,
-                        'src': img.get('src', '')
-                    })
-            
-            # 내부 링크 정보 추출
-            urls = []
-            for link in soup.find_all('a', href=True):
-                # 헤더/푸터 영역 제외
-                if link.find_parent(id=['cfmClHeader', 'cfmClFooter']):
-                    continue
-                    
-                link_url = link.get('href')
-                link_text = link.get_text().strip()
-                
-                # 의미있는 링크 텍스트가 있는지 확인 (최소 2글자 이상)
-                if len(link_text) < 2:
-                    continue
-                    
-                # mailto/tel 제외, 의미있는 텍스트만
-                if (link_url.startswith('http') or link_url.startswith('/')) and link_text:
-                    urls.append({
-                        'desc': link_text,
-                        'url': link_url
-                    })
-            
-            # URL 기준 중복 제거
-            seen_urls = set()
-            unique_urls = []
-            for url_info in urls:
-                if url_info['url'] not in seen_urls:
-                    seen_urls.add(url_info['url'])
-                    unique_urls.append(url_info)
-            
-            # 결과 추가
+                alt_text = (img.get('alt') or '').strip()
+                if len(alt_text) > 2:
+                    images.append({'alt': alt_text, 'src': img.get('src', '')})
             if images:
                 metadata['images'] = images
-            if unique_urls:
-                metadata['urls'] = unique_urls
-                
+
+            urls_data = []
+            for link in soup.find_all('a', href=True):
+                if link.find_parent(id=['cfmClHeader', 'cfmClFooter']):
+                    continue
+                link_text = link.get_text().strip()
+                if len(link_text) < 2:
+                    continue
+                href = link.get('href')
+                if href.startswith('http') or href.startswith('/'):
+                    urls_data.append({'desc': link_text, 'url': href})
+            if urls_data:
+                metadata['urls'] = _deduplicate_by_key(urls_data, 'url')
         except Exception as e:
             logger.warning(f"메타데이터 추출 실패: {e}")
-            metadata = {}
-        
-        # JSON 데이터 구성 (불필요한 필드 주석 처리)
+
         json_data = {
             "url": url,
-            "murl": "",  # 모바일 URL (기본값 빈 문자열)
-            # "hierarchy": hierarchy,  # 현재 메뉴 정보가 없어 주석 처리
+            "murl": murl or "",
+            "hierarchy": normalized_hierarchy or [],
             "title": title,
             "text": final_content,
             "startdate": startdate,
             "enddate": enddate,
             "metadata": metadata,
-            # "status": "new"  # 현재 상태 관리가 없어 주석 처리
         }
-        
+        if normalized_hierarchy:
+            json_data["hierarchy"] = normalized_hierarchy
+
         return {
             "success": True,
             "json_data": json_data,
             "text_length": len(final_content),
-            "metadata_count": len(metadata)
+            "metadata_count": len(metadata),
         }
-        
     except Exception as e:
         logger.error(f"JSON 포맷 변환 실패: {e}")
         return {
             "success": False,
             "error": str(e)
         }
+
+
+def _deduplicate_by_key(items: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
+    seen: set[str] = set()
+    unique_items: List[Dict[str, Any]] = []
+    for item in items:
+        value = item.get(key)
+        if value and value not in seen:
+            seen.add(value)
+            unique_items.append(item)
+    return unique_items
+
+def extract_meta_title_from_html(html_content: str) -> Optional[str]:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html_content or "", "html.parser")
+    prop = soup.find("meta", attrs={"property": "og:title"})
+    if prop and prop.get("content"):
+        content = prop.get("content").strip()
+        if content:
+            return content
+    name_meta = soup.find("meta", attrs={"name": "title"})
+    if name_meta and name_meta.get("content"):
+        content = name_meta.get("content").strip()
+        if content:
+            return content
+    head_title = soup.find("title")
+    if head_title:
+        text = head_title.get_text(strip=True)
+        if text:
+            return text
+    return None
 
 # ============================================================================
 # MENU SEARCH TOOLS (메뉴 검색 및 조회)
