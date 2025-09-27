@@ -74,8 +74,13 @@ class StructuredTable(BaseModel):
 
 class AriCrawlResult(BaseModel):
     """ARI crawling result model"""
+    title: Optional[str] = Field(None, description="Page title")
+    breadcrumbs: Optional[List[Dict[str, str]]] = Field(None, description="Breadcrumb navigation")
     content: Dict[str, Any] = Field(
         ..., description="Extracted content data (e.g., contents array)"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Extracted metadata (img, urls, pagetree, etc.)"
     )
 
 class AriCrawlResponse(BaseModel):

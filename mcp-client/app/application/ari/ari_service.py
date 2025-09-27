@@ -2,6 +2,7 @@
 import logging
 import tempfile
 from typing import List, Dict, Any, Optional
+import re
 try:
     from markdownify import markdownify as md_convert
 except Exception:  # 런타임 환경에 따라 미설치 가능
@@ -102,6 +103,107 @@ class AriService:
                 'error': str(e),
                 'message': f"HTML 파일 처리 중 오류가 발생했습니다: {str(e)}"
             }
+
+    async def process_html_files_complete(self, files: List[UploadFile]) -> Dict[str, Any]:
+        """
+        HTML 파일들을 완전히 처리하여 구조화된 JSON까지 변환
+        
+        Args:
+            files: 업로드된 HTML 파일들
+            
+        Returns:
+            완전 처리된 결과 정보 (마크다운 + 구조화된 JSON 포함)
+        """
+        try:
+            if not files:
+                raise ValueError("업로드된 파일이 없습니다")
+            
+            processed_files = []
+            total_size = 0
+            
+            for file in files:
+                if not file.filename.endswith('.html'):
+                    logger.warning(f"HTML이 아닌 파일 무시: {file.filename}")
+                    continue
+                
+                # 고유한 파일명 생성
+                file_id = str(uuid.uuid4())
+                file_path = os.path.join(self.temp_dir, f"{file_id}_{file.filename}")
+                json_path = os.path.join(self.output_dir, f"{file_id}.json")
+                
+                # 파일 저장
+                content = await file.read()
+                total_size += len(content)
+                
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+                
+                # HTML 콘텐츠 디코딩
+                html_content = content.decode('utf-8', errors='ignore')
+                
+                # 1단계: 기본 메타데이터 추출 (개선된 버전)
+                basic_data = await self._extract_main_content(html_content)
+                
+                # 2단계: 마크다운 변환 (개선된 버전 사용)
+                markdown_content = self.extract_markdown(html_content)
+                
+                # 3단계: 마크다운을 구조화된 JSON으로 변환
+                json_result = self.ari_markdown_to_json(markdown_content)
+                contents = json_result.get('contents', []) if json_result.get('success') else []
+                
+                # 폴백: 마크다운을 텍스트 단락으로 반환
+                if not contents:
+                    contents = [{"id": 1, "type": "text", "title": "", "data": markdown_content}]
+                
+                # 새로운 구조로 통합된 데이터 구성
+                processed_data = {
+                    'title': basic_data.get('title', ''),
+                    'breadcrumbs': basic_data.get('breadcrumbs', []),
+                    'content': {
+                        'text': basic_data['content']['text'],
+                        'markdown': markdown_content,
+                        'contents': contents
+                    },
+                    'metadata': {
+                        **basic_data.get('metadata', {}),
+                        'markdown_length': len(markdown_content),
+                        'contents_count': len(contents)
+                    }
+                }
+                
+                # JSON 파일로 저장
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    json.dump(processed_data, f, ensure_ascii=False, indent=2)
+                
+                processed_files.append({
+                    'original_filename': file.filename,
+                    'file_id': file_id,
+                    'file_path': file_path,
+                    'json_path': json_path,
+                    'size': len(content),
+                    'processed_data': processed_data,
+                    'contents': contents,
+                    'markdown': markdown_content,
+                    'upload_time': datetime.now().isoformat()
+                })
+                
+                logger.info(f"HTML 파일 완전 처리 완료: {file.filename} ({len(content)} bytes)")
+            
+            return {
+                'success': True,
+                'processed_files': processed_files,
+                'total_files': len(processed_files),
+                'total_size': total_size,
+                'message': f"{len(processed_files)}개의 HTML 파일이 성공적으로 완전 처리되었습니다"
+            }
+            
+        except Exception as e:
+            logger.error(f"HTML 파일 완전 처리 중 오류: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'message': f"HTML 파일 완전 처리 중 오류가 발생했습니다: {str(e)}"
+            }
     
     async def _extract_main_content(self, html_content: str) -> Dict[str, Any]:
         """
@@ -116,16 +218,64 @@ class AriService:
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
             
+            # 페이지 제목과 브레드크럼 추출 (요소 제거 전에 먼저 수행)
+            page_title = ""
+            breadcrumbs = []
+            urls = []
+            pagetree = []
+            
+            # 1. 페이지 제목 추출 (h1#title-text)
+            title_element = soup.find('h1', {'id': 'title-text'})
+            if title_element:
+                page_title = title_element.get_text(strip=True)
+            
+            # 2. 브레드크럼 추출 (ol#breadcrumbs)
+            breadcrumb_element = soup.find('ol', {'id': 'breadcrumbs'})
+            if breadcrumb_element:
+                for li in breadcrumb_element.find_all('li'):
+                    # ellipsis 버튼 제외
+                    if li.get('id') == 'ellipsis':
+                        continue
+                        
+                    link = li.find('a')
+                    if link:
+                        breadcrumbs.append({
+                            'text': link.get_text(strip=True),
+                            'href': link.get('href', '')
+                        })
+                    else:
+                        # 링크가 없는 경우 (예: 현재 페이지)
+                        span = li.find('span')
+                        if span:
+                            breadcrumbs.append({
+                                'text': span.get_text(strip=True),
+                                'href': ''
+                            })
+            
+            # 3. 페이지 트리 추출 (ia-secondary-content)
+            pagetree_element = soup.find('div', {'class': 'ia-secondary-content'})
+            if pagetree_element:
+                pagetree = self._extract_pagetree(pagetree_element)
+            
+            # 4. 메인 콘텐츠에서 URL 추출 (요소 제거 전에 수행)
+            main_content = soup.find('div', {'id': 'main-content'})
+            if not main_content:
+                main_content = soup.find('div', {'class': 'wiki-content'})
+            if not main_content:
+                main_content = soup.find('main') or soup.find('body') or soup
+                
+            if main_content:
+                urls = self._extract_urls(main_content)
+            
             # 제거할 요소들 (header, footer, sidebar, nav 등 + Confluence 특화)
+            # 단, 페이지 제목과 브레드크럼은 유지
             elements_to_remove = [
                 'header', 'footer', 'nav', 'aside', 'sidebar',
                 '.header', '.footer', '.nav', '.aside', '.sidebar',
-                '.navigation', '.menu', '.breadcrumb',
+                '.navigation', '.menu',
                 
-                # Confluence 특화 UI 요소들
+                # Confluence 특화 UI 요소들 (제목/브레드크럼 제외)
                 'div.aui-page-header-actions',     # 페이지 액션 버튼들
-                'div.page-metadata',               # 페이지 메타데이터
-                'ul.aui-nav-breadcrumbs',         # 브레드크럼
                 'div.page-actions',               # 페이지 액션들
                 'div.aui-toolbar2',               # 툴바
                 'div.comment-container',          # 댓글 컨테이너
@@ -138,9 +288,12 @@ class AriService:
                 'div.aui-message',                # 메시지
                 'div.page-metadata-modification-info', # 수정 정보
                 '.aui-page-header-actions',       # 페이지 헤더 액션
-                '.page-metadata',                 # 페이지 메타데이터 (클래스)
                 '.like-button-container',         # 좋아요 버튼 (클래스)
                 '.page-labels',                   # 페이지 라벨 (클래스)
+                
+                # 메타데이터 배너는 제거하되 제목/브레드크럼은 유지
+                'div#page-metadata-banner',       # 메타데이터 배너
+                'ul.banner',                      # 배너 리스트
             ]
             
             # 요소 제거
@@ -173,11 +326,13 @@ class AriService:
             # 텍스트 추출
             text_content = main_content.get_text(separator=' ', strip=True)
             
-            # 제목 추출
+            # HTML 제목 추출 (fallback)
             title = soup.find('title')
             title_text = title.get_text(strip=True) if title else ""
             
-            # (요청에 따라) headings, links는 content에서 제거
+            # 페이지 제목이 없으면 HTML 제목 사용
+            if not page_title:
+                page_title = title_text
             
             # 원복: 메인 콘텐츠만 추출하도록 간소화 (이미지/첨부/댓글/테이블 비활성화)
             images: List[Dict[str, Any]] = []
@@ -188,18 +343,21 @@ class AriService:
             
             # 위에서 파싱한 결과 사용
 
-            # JSON 데이터 구성
+            # 새로운 JSON 구조로 구성
             result = {
+                'title': page_title or title_text,  # html-title 사용 (중복 제거)
+                'breadcrumbs': breadcrumbs,
                 'content': {
                     'text': text_content
                 },
                 'metadata': {
-                    'title': title_text,
+                    'img': images,
+                    'urls': urls,
+                    'pagetree': pagetree,
                     'extracted_at': datetime.now().isoformat(),
                     'content_length': len(text_content),
                     'tables_markdown': tables_markdown,
                     'structured_tables': structured_tables,
-                    'images': images,
                     'attachments': attachments,
                     'comments': comments
                 }
@@ -227,33 +385,56 @@ class AriService:
 
 
     def extract_clean_html(self, html_content: str) -> str:
-        """exclude 요소 제거 후 main-content 원문 HTML을 그대로 반환"""
+        """exclude 요소 제거 후 페이지 제목, 브레드크럼, main-content 원문 HTML을 그대로 반환"""
         soup = BeautifulSoup(html_content, 'html.parser')
         elements_to_remove = [
             'header', 'footer', 'nav', 'aside', 'sidebar',
             '.header', '.footer', '.nav', '.aside', '.sidebar',
-            '.navigation', '.menu', '.breadcrumb',
-            'div.aui-page-header-actions', 'div.page-metadata', 'ul.aui-nav-breadcrumbs',
-            'div.page-actions', 'div.aui-toolbar2', 'div.comment-container', 'div.like-button-container',
-            'div.page-labels', 'div.comment-actions', 'span.st-table-filter', 'svg',
+            '.navigation', '.menu',
+            'div.aui-page-header-actions', 'div.page-actions', 'div.aui-toolbar2', 
+            'div.comment-container', 'div.like-button-container', 'div.page-labels', 
+            'div.comment-actions', 'span.st-table-filter', 'svg',
             'div.confluence-information-macro', 'div.aui-message', 'div.page-metadata-modification-info',
-            '.aui-page-header-actions', '.page-metadata', '.like-button-container', '.page-labels',
+            '.aui-page-header-actions', '.like-button-container', '.page-labels',
+            'div#page-metadata-banner', 'ul.banner',
         ]
         for selector in elements_to_remove:
             for el in soup.select(selector):
                 el.decompose()
 
+        # 페이지 제목과 브레드크럼을 포함한 컨테이너 생성
+        result_parts = []
+        
+        # 1. 페이지 제목 추가
+        title_element = soup.find('h1', {'id': 'title-text'})
+        if title_element:
+            result_parts.append(f"<h1>{title_element.decode_contents()}</h1>")
+        
+        # 2. 브레드크럼 추가
+        breadcrumb_element = soup.find('ol', {'id': 'breadcrumbs'})
+        if breadcrumb_element:
+            result_parts.append(f"<nav aria-label='이동 경로'>{breadcrumb_element.decode_contents()}</nav>")
+        else:
+            # 대안: breadcrumbs 클래스가 있는 요소 찾기
+            breadcrumb_alt = soup.find('div', class_='breadcrumbs')
+            if breadcrumb_alt:
+                result_parts.append(f"<nav aria-label='이동 경로'>{breadcrumb_alt.decode_contents()}</nav>")
+        
+        # 3. 메인 콘텐츠 추가
         main_content = soup.find('div', {'id': 'main-content'})
         if not main_content:
             main_content = soup.find('div', {'class': 'wiki-content'})
         if not main_content:
             main_content = soup.find('main') or soup.find('body') or soup
 
-        # main-content 내부 HTML만 반환
-        try:
-            return main_content.decode_contents() if hasattr(main_content, 'decode_contents') else str(main_content)
-        except Exception:
-            return str(main_content)
+        if main_content:
+            try:
+                main_html = main_content.decode_contents() if hasattr(main_content, 'decode_contents') else str(main_content)
+                result_parts.append(main_html)
+            except Exception:
+                result_parts.append(str(main_content))
+
+        return '\n'.join(result_parts)
 
     def _parse_tables(self, root: BeautifulSoup) -> Dict[str, Any]:
         """중첩/병합 테이블을 처리하여 구조화 + 마크다운 생성"""
@@ -613,6 +794,180 @@ class AriService:
                 result_parts.append(table_md.strip())
         
         return '\n\n'.join(result_parts) if result_parts else ""
+
+    def ari_markdown_to_json(self, markdown_content: str) -> Dict[str, Any]:
+        """
+        ARI 마크다운을 최종 JSON 포맷(contents 배열)으로 변환합니다.
+        - 헤더(#..)는 이후 text 블록의 title로 사용
+        - 마크다운 테이블(|...| + | --- |)을 table 항목으로 파싱
+        - 그 외 연속 텍스트를 하나의 text 항목으로 누적하여 추가
+        리턴: { success, contents: [...] }
+        """
+        try:
+            if markdown_content is None:
+                return {"success": False, "error": "마크다운이 비어있습니다"}
+
+            lines = markdown_content.splitlines()
+            contents: List[Dict[str, Any]] = []
+            buffer: List[str] = []  # 텍스트 누적 버퍼
+            current_title: str = ""
+            idx = 0
+            i = 0
+
+            def flush_text_buffer():
+                nonlocal idx, buffer
+                if buffer and any(s.strip() for s in buffer):
+                    text = "\n".join([s.rstrip() for s in buffer]).strip()
+                    if text:
+                        idx += 1
+                        contents.append({
+                            "id": idx,
+                            "type": "text",
+                            "title": current_title,
+                            "data": text
+                        })
+                buffer = []
+
+            while i < len(lines):
+                line = lines[i]
+
+                # 제목 라인
+                if re.match(r"^\s*#{1,6}\s+", line):
+                    # 기존 텍스트 버퍼를 먼저 비움
+                    flush_text_buffer()
+                    # 현재 제목 갱신
+                    current_title = re.sub(r"^\s*#{1,6}\s+", "", line).strip()
+                    i += 1
+                    continue
+
+                # 테이블 감지: 현재 줄이 헤더 라인, 다음 줄이 구분선
+                if '|' in line:
+                    # 테이블 헤더 후보와 구분선 검사
+                    header_candidate = line.strip()
+                    if i + 1 < len(lines):
+                        separator = lines[i + 1].strip()
+                        if re.match(r"^\|\s*:?\-+\s*(\|\s*:?\-+\s*)+\|$", separator):
+                            # 텍스트 버퍼를 먼저 비움
+                            flush_text_buffer()
+
+                            # 헤더 파싱
+                            raw_headers = [h.strip() for h in header_candidate.strip('|').split('|')]
+                            headers = [h for h in raw_headers if h != ""]
+
+                            # 데이터 행 수집
+                            i += 2  # 헤더와 구분선 건너뜀
+                            rows = []
+                            row_id = 0
+                            while i < len(lines) and '|' in lines[i] and not re.match(r"^\s*#", lines[i]):
+                                row_line = lines[i].strip()
+                                if not row_line:
+                                    break
+                                raw_cells = [c.strip() for c in row_line.strip('|').split('|')]
+                                # 셀 수가 헤더보다 적으면 보정
+                                while len(raw_cells) < len(headers):
+                                    raw_cells.append("")
+                                data = {headers[j]: raw_cells[j] if j < len(raw_cells) else "" for j in range(len(headers))}
+                                row_id += 1
+                                rows.append({"row_id": row_id, "data": data})
+                                i += 1
+
+                            idx += 1
+                            contents.append({
+                                "id": idx,
+                                "type": "table",
+                                "headers": headers,
+                                "rows": rows
+                            })
+                            continue
+
+                # 빈 줄이면 텍스트 버퍼를 플러시
+                if not line.strip():
+                    flush_text_buffer()
+                    i += 1
+                    continue
+
+                # 그 외는 텍스트 버퍼에 누적
+                buffer.append(line)
+                i += 1
+
+            # 루프 종료 후 남은 텍스트 반영
+            flush_text_buffer()
+
+            return {"success": True, "contents": contents}
+        except Exception as e:
+            logger.error(f"ari_markdown_to_json 실패: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def _extract_urls(self, content_element) -> List[Dict[str, str]]:
+        """메인 콘텐츠에서 링크 추출"""
+        urls = []
+        for link in content_element.find_all('a', href=True):
+            href = link.get('href', '')
+            text = link.get_text(strip=True)
+            if href and text:  # 빈 링크나 텍스트 제외
+                urls.append({
+                    'text': text,
+                    'href': href
+                })
+        return urls
+    
+    def _extract_pagetree(self, pagetree_element) -> List[Dict[str, Any]]:
+        """페이지 트리 구조 추출 (사용자 제공 코드 기반)"""
+        def extract_page_info(li_element) -> Optional[Dict]:
+            """
+            li 요소에서 페이지 정보를 추출
+            """
+            # span 안의 링크 요소 찾기 (viewpage.action이 포함된 링크만)
+            span = li_element.find('span', class_='plugin_pagetree_children_span')
+            if not span:
+                return None
+                
+            link = span.find('a', href=lambda x: x and ('viewpage.action' in x or '/display/' in x))
+            if not link:
+                return None
+                
+            # 페이지 정보 추출
+            page_info = {
+                'text': link.text.strip(),
+                'href': link.get('href', '')
+            }
+            
+            # pageId 추출 (href에서)
+            if 'pageId=' in page_info['href']:
+                import re
+                match = re.search(r'pageId=(\d+)', page_info['href'])
+                if match:
+                    page_info['page_id'] = match.group(1)
+            
+            # 자식 요소들 찾기
+            children_container = li_element.find('div', class_='plugin_pagetree_children_container')
+            if children_container:
+                children_ul = children_container.find('ul', class_='plugin_pagetree_children_list')
+                if children_ul:
+                    children = []
+                    for child_li in children_ul.find_all('li', recursive=False):
+                        child_info = extract_page_info(child_li)
+                        if child_info:
+                            children.append(child_info)
+                    
+                    if children:
+                        page_info['children'] = children
+            
+            return page_info
+        
+        # 메인 ul 요소 찾기
+        main_ul = pagetree_element.find('ul', class_='plugin_pagetree_children_list')
+        if not main_ul:
+            return []
+        
+        # 최상위 li 요소들 처리
+        result = []
+        for li in main_ul.find_all('li', recursive=False):
+            page_info = extract_page_info(li)
+            if page_info:
+                result.append(page_info)
+        
+        return result
 
 
 # 싱글톤 인스턴스
