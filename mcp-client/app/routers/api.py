@@ -501,55 +501,38 @@ async def ari_crawl_endpoint(
         if not files:
             raise HTTPException(status_code=400, detail="업로드할 HTML 파일이 없습니다")
         
-        # HTML 파일 처리 (기존 저장/메타 유지) + 마크다운 → JSON 파싱 추가
-        result = await ari_service.process_html_files(files)
+        # 통합된 HTML 파일 처리 (마크다운 + 구조화된 JSON까지)
+        result = await ari_service.process_html_files_complete(files)
         if not result['success']:
             raise HTTPException(status_code=500, detail=result['message'])
 
-        structured_results: List[dict] = []
+        # 새로운 구조로 응답 데이터 구성
+        structured_results = []
         for info in result['processed_files']:
-            try:
-                # 원본 HTML 로드
-                with open(info['file_path'], 'r', encoding='utf-8', errors='ignore') as rf:
-                    html = rf.read()
+            processed_data = info.get('processed_data', {})
+            metadata = processed_data.get('metadata', {})
+            
+            structured_results.append({
+                'title': processed_data.get('title', ''),
+                'breadcrumbs': processed_data.get('breadcrumbs', []),
+                'content': {
+                    'contents': info['contents']
+                },
+                'metadata': {
+                    'img': metadata.get('img', []),
+                    'urls': metadata.get('urls', []),
+                    'pagetree': metadata.get('pagetree', []),
+                    'content_length': metadata.get('content_length', 0),
+                    'extracted_at': metadata.get('extracted_at', ''),
+                    'markdown_length': metadata.get('markdown_length', 0),
+                    'contents_count': metadata.get('contents_count', 0)
+                }
+            })
 
-                # 1) HTML → Markdown (Confluence main-content 기반)
-                md = ari_service.extract_markdown(html)
-
-                # 2) Markdown → JSON(contents)
-                tool_res = await mcp_service.call_tool('ari_markdown_to_json', {"markdown_content": md})
-                # MCP 결과 안전 해석
-                if hasattr(tool_res, 'structured_content'):
-                    tool_payload = tool_res.structured_content
-                elif hasattr(tool_res, 'data'):
-                    tool_payload = tool_res.data
-                else:
-                    tool_payload = tool_res if isinstance(tool_res, dict) else {}
-                contents = tool_payload.get('contents', []) if tool_payload.get('success') else []
-                if not contents:
-                    # 폴백: 마크다운을 텍스트 단락으로 반환
-                    contents = [{"id": 1, "type": "text", "title": "", "data": md}]
-
-                # 메타데이터: 기존 처리에서 추출된 제목/길이 활용
-                meta_src = info.get('processed_data', {}).get('metadata', {})
-                structured_results.append({
-                    'content': {
-                        'contents': contents
-                    }
-                })
-            except Exception as pe:
-                logger.error(f"ARI crawl item 구조화 실패: {pe}")
-                structured_results.append({
-                    'content': {
-                        'contents': [{"id": 1, "type": "text", "title": "", "data": "구조화 중 오류가 발생했습니다."}]
-                    }
-                })
-
-        # 응답 데이터 구성 (AriCrawlResponse 모델 유지)
         response_data = AriCrawlResponse(
             taskId=f"ari_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             status=TaskStatus.COMPLETED,
-            result=structured_results,  # contents 기반 결과
+            result=structured_results,
             error=None,
             createdAt=result['processed_files'][0]['upload_time'] if result['processed_files'] else datetime.now().isoformat(),
             completedAt=datetime.now().isoformat(),
@@ -558,7 +541,7 @@ async def ari_crawl_endpoint(
             total_size=result['total_size']
         )
         
-        logger.info(f"✅ ARI HTML 처리 완료: {result['total_files']}개 파일, {result['total_size']} bytes")
+        logger.info(f"✅ ARI HTML 완전 처리 완료: {result['total_files']}개 파일, {result['total_size']} bytes")
         
         return response_data
         
@@ -577,15 +560,14 @@ class AriProcessRequest(BaseModel):
 @router.post("/ari/process", tags=["ari"])
 async def ari_process_endpoint(request: AriProcessRequest):
     """
-    자연어/URL/HTML 입력을 받아 Confluence HTML을 전처리/파싱하여 주요 내용만 추출합니다.
+    HTML 콘텐츠를 받아 Confluence HTML을 전처리/파싱하여 주요 내용만 추출합니다.
     - htmls가 제공되면 그대로 처리
-    - urls가 제공되면 MCP의 crawl4ai_scrape 툴로 크롤링 후 처리
-    - query만 있는 경우, query에서 URL들을 추출하여 처리
     반환: { success, processed, total_inputs, results: [processed_data...], errors: [...] }
     """
     try:
         errors: List[dict] = []
         candidate_htmls: List[str] = []
+        
         # HTML 직접 전달만 처리
         for html in request.htmls:
             if isinstance(html, str) and html.strip():
@@ -598,15 +580,10 @@ async def ari_process_endpoint(request: AriProcessRequest):
         results: List[dict] = []
         for html in candidate_htmls:
             try:
+                # 통합된 처리: 마크다운 + 구조화된 JSON
                 md = ari_service.extract_markdown(html)
-                tool_res = await mcp_service.call_tool('ari_markdown_to_json', {"markdown_content": md})
-                if hasattr(tool_res, 'structured_content'):
-                    tool_payload = tool_res.structured_content
-                elif hasattr(tool_res, 'data'):
-                    tool_payload = tool_res.data
-                else:
-                    tool_payload = tool_res if isinstance(tool_res, dict) else {}
-                contents = tool_payload.get('contents', []) if tool_payload.get('success') else []
+                json_result = ari_service.ari_markdown_to_json(md)
+                contents = json_result.get('contents', []) if json_result.get('success') else []
                 if not contents:
                     contents = [{"id": 1, "type": "text", "title": "", "data": md}]
 
@@ -616,6 +593,7 @@ async def ari_process_endpoint(request: AriProcessRequest):
                     }
                 })
             except Exception as pe:
+                logger.error(f"ARI process item 실패: {pe}")
                 errors.append({"error": f"parse failed: {str(pe)}"})
 
         return {
@@ -637,12 +615,13 @@ async def ari_markdown_endpoint(
     files: List[UploadFile] = File(..., description="HTML 파일들 (복수 파일 지원)")
 ):
     """
-    HTML을 받아 테이블만 마크다운으로 변환하여 반환합니다.
-    - 반환 필드: tables_markdown(list[str])
+    HTML을 받아 마크다운으로 변환하여 반환합니다.
+    - 반환: 마크다운 텍스트 (text/markdown)
     """
     try:
         if not files:
             raise HTTPException(status_code=400, detail="업로드할 HTML 파일이 없습니다")
+        
         fragments: List[str] = []
         for file in files:
             if not file.filename.endswith('.html'):
@@ -651,6 +630,7 @@ async def ari_markdown_endpoint(
             html = content.decode('utf-8', errors='ignore')
             md = ari_service.extract_markdown(html)
             fragments.append(md)
+        
         final_md = "\n\n".join(fragments)
         return Response(content=final_md, media_type="text/markdown; charset=utf-8")
     except HTTPException:
