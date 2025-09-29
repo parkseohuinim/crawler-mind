@@ -3,10 +3,22 @@
 import { RAGCrawlingResult } from '@/app/_lib/types';
 
 interface ResultDisplayProps {
-  result: RAGCrawlingResult[];
+  result: RAGCrawlingResult[] | { error: string };
 }
 
 export default function ResultDisplay({ result }: ResultDisplayProps) {
+  // 에러 케이스 처리
+  if ('error' in result) {
+    return (
+      <div className="result-container">
+        <div className="result-title" style={{ color: '#f56565' }}>오류 발생</div>
+        <div style={{ color: '#f56565', fontSize: '0.875rem' }}>
+          {result.error}
+        </div>
+      </div>
+    );
+  }
+
   if (!result || result.length === 0) {
     return (
       <div className="result-container">

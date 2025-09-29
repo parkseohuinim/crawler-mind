@@ -4,7 +4,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   progress?: ProgressStep[];
-  result?: RAGCrawlingResult[];
+  result?: RAGCrawlingResult[] | { error: string };
 }
 
 export interface ProgressStep {

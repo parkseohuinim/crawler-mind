@@ -271,6 +271,40 @@ kubectl logs -n crawler-mind deployment/mcp-client
 kubectl logs -n crawler-mind deployment/frontend
 ```
 
+## 배포 업데이트
+
+Docker Hub에 새 이미지가 올라갔을 때 배포를 업데이트하려면 다음 명령어를 사용하세요:
+
+```bash
+# 모든 주요 서비스 재시작 (imagePullPolicy: Always로 설정되어 있어 최신 이미지 자동 다운로드)
+kubectl rollout restart deployment frontend -n crawler-mind
+kubectl rollout restart deployment mcp-client -n crawler-mind
+kubectl rollout restart deployment mcp-server -n crawler-mind
+
+# 재시작 상태 확인
+kubectl rollout status deployment frontend -n crawler-mind
+kubectl rollout status deployment mcp-client -n crawler-mind
+kubectl rollout status deployment mcp-server -n crawler-mind
+
+# 특정 서비스만 업데이트하려면
+kubectl rollout restart deployment [서비스명] -n crawler-mind
+```
+
+### 배포 업데이트 후 확인사항
+
+```bash
+# Pod 상태 확인
+kubectl get pods -n crawler-mind
+
+# 서비스 상태 확인
+kubectl get svc -n crawler-mind
+
+# 로그 확인 (새로 시작된 Pod의 로그)
+kubectl logs -n crawler-mind deployment/frontend --tail=50
+kubectl logs -n crawler-mind deployment/mcp-client --tail=50
+kubectl logs -n crawler-mind deployment/mcp-server --tail=50
+```
+
 ## 아키텍처
 
 ### 전체 아키텍처
