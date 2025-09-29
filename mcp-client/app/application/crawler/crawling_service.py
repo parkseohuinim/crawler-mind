@@ -5,7 +5,9 @@ import logging
 import re
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 
@@ -23,6 +25,8 @@ MENU_PATH_DELIMITER = "^"
 # convert_to_json_format 기본 날짜 값
 JSON_START_DATE = "1900-01-01"
 JSON_END_DATE = "2999-12-31"
+# 마크다운 저장 경로
+MARKDOWN_RESULT_DIR = Path(__file__).parent / "result"
 
 
 class RAGCrawlingService:
@@ -111,6 +115,10 @@ class RAGCrawlingService:
                 raise ValueError("크롤링된 데이터가 없습니다")
 
             processed_results = await self._preprocess_data(task_id, scraped_results)
+            
+            # 마크다운 파일은 이미 개별적으로 저장되었으므로 여기서는 건너뜀
+            await self._send_update(task_id, "status", {"message": "마크다운 파일 저장이 완료되었습니다", "status": "active"})
+            
             json_results = await self._convert_to_json(task_id, processed_results, url_menu_map)
 
             result = CrawlingResult(json_data=json_results)
@@ -118,7 +126,7 @@ class RAGCrawlingService:
             self.tasks[task_id].status = TaskStatus.COMPLETED
             self.tasks[task_id].completedAt = datetime.now().isoformat()
             await self._send_update(task_id, "final", result.model_dump())
-            await self._send_update(task_id, "complete", {"message": "RAG 크롤링 작업이 완료되었습니다"})
+            await self._send_update(task_id, "complete", {"message": f"RAG 크롤링 작업이 완료되었습니다. 각 URL마다 마크다운 파일이 개별 저장되었습니다"})
         except Exception as exc:  # pragma: no cover
             logger.error("RAG Task %s failed: %s", task_id, exc)
             self.tasks[task_id].status = TaskStatus.FAILED
@@ -162,24 +170,35 @@ class RAGCrawlingService:
     # ----------------------------------------------------------------------------------
     async def _scrape_data(self, task_id: str, urls: List[str]) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
+        logger.info(f"🚀 스크래핑 시작: 총 {len(urls)}개 URL 처리 예정")
+        
         for idx, url in enumerate(urls, start=1):
+            logger.info(f"📄 URL {idx}/{len(urls)} 처리 시작: {url}")
             await self._send_update(task_id, "status", {"message": f"크롤링 진행: {idx}/{len(urls)} - {url}", "status": "active"})
             try:
                 tool_result = await crawler_tools.scrape(url)
                 if tool_result.get("success"):
-                    results.append(
-                        {
-                            "url": url,
-                            "title": tool_result.get("title"),
-                            "html_content": tool_result.get("html_content", ""),
-                            "markdown": tool_result.get("markdown", ""),
-                        }
-                    )
+                    result_data = {
+                        "url": url,
+                        "title": tool_result.get("title"),
+                        "html_content": tool_result.get("html_content", ""),
+                        "markdown": tool_result.get("markdown", ""),
+                    }
+                    results.append(result_data)
+                    logger.info(f"✅ URL {idx}/{len(urls)} 크롤링 성공: {url} - 제목: {result_data.get('title')}")
+                    
+                    # 즉시 마크다운 파일 저장
+                    await self._save_single_markdown_file(task_id, result_data, idx, len(urls))
+                    
                 else:
-                    results.append({"url": url, "error": tool_result.get("error", "알 수 없는 오류"), "success": False})
+                    error_result = {"url": url, "error": tool_result.get("error", "알 수 없는 오류"), "success": False}
+                    results.append(error_result)
+                    logger.warning(f"⚠️ URL {idx}/{len(urls)} 크롤링 실패: {url} - {error_result.get('error')}")
             except Exception as exc:  # pragma: no cover
-                logger.error("❌ MCP scrape failed: %s - %s", url, exc)
+                logger.error(f"❌ URL {idx}/{len(urls)} MCP scrape failed: {url} - {exc}")
                 results.append({"url": url, "error": str(exc), "success": False})
+        
+        logger.info(f"✅ 스크래핑 완료: 총 {len(results)}개 결과 (성공: {len([r for r in results if r.get('success', True)])}개)")
         return results
 
     async def _preprocess_data(self, task_id: str, scraped_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -356,6 +375,65 @@ class RAGCrawlingService:
             await queue.put(message)
         except Exception as exc:  # pragma: no cover
             logger.error("[RAG SSE] Failed to send update for task %s: %s", task_id, exc)
+
+    # ----------------------------------------------------------------------------------
+    # Markdown saving helpers
+    # ----------------------------------------------------------------------------------
+    def _sanitize_filename(self, url: str, title: Optional[str] = None) -> str:
+        """제목이 있으면 우선 사용하고, 없으면 URL 기반 파일명 생성"""
+        base = title.strip() if title and title.strip() and title != "None" else ""
+        if base:
+            name = re.sub(r"[^0-9A-Za-z가-힣._-]", "_", base)
+        else:
+            parsed = urlparse(url)
+            domain = (parsed.netloc or "unknown").replace("www.", "")
+            stem = parsed.path.strip("/").split("/")[-1] or "index"
+            stem = stem.split(".")[0]
+            name = f"{domain}_{stem}" if stem and stem != "index" else domain
+            name = re.sub(r"[^0-9A-Za-z._-]", "_", name)
+        return name[:80] or "untitled"
+
+    def _save_markdown_file(self, url: str, title: Optional[str], markdown_content: str) -> Optional[str]:
+        """마크다운 파일 저장 후 경로 반환"""
+        if not markdown_content.strip():
+            logger.warning("⚠️ 마크다운 내용이 비어있어 저장을 건너뜁니다: %s", url)
+            return None
+
+        try:
+            MARKDOWN_RESULT_DIR.mkdir(parents=True, exist_ok=True)
+            filename = f"{self._sanitize_filename(url, title)}_{datetime.now():%Y%m%d_%H%M%S}.md"
+            file_path = MARKDOWN_RESULT_DIR / filename
+            heading = title if title and title != "None" else url
+            payload = (
+                f"# {heading}\n\n"
+                f"**URL:** {url}\n\n"
+                f"**추출 시간:** {datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+                "---\n\n"
+                f"{markdown_content}\n"
+            )
+            file_path.write_text(payload, encoding="utf-8")
+            logger.info("✅ 마크다운 파일 저장 완료: %s", file_path)
+            return str(file_path)
+        except Exception as exc:  # pragma: no cover
+            logger.error("❌ 마크다운 파일 저장 실패 (%s): %s", url, exc)
+            return None
+
+    async def _save_single_markdown_file(self, task_id: str, result_data: Dict[str, Any], idx: int, total: int) -> None:
+        """단일 결과를 즉시 저장"""
+        url = result_data.get("url", "")
+        markdown_content = result_data.get("markdown", "")
+        title = result_data.get("title")
+
+        status_prefix = f"{idx}/{total}"
+        await self._send_update(task_id, "status", {"message": f"마크다운 저장 중: {status_prefix} - {title or url}", "status": "active"})
+
+        file_path = self._save_markdown_file(url, title, markdown_content)
+        if file_path:
+            logger.info("✅ %s 마크다운 저장 완료: %s", status_prefix, file_path)
+            await self._send_update(task_id, "status", {"message": f"✅ 저장 완료: {status_prefix}", "status": "active"})
+        else:
+            logger.warning("⚠️ %s 마크다운 저장 실패", status_prefix)
+            await self._send_update(task_id, "status", {"message": f"❌ 저장 실패: {status_prefix}", "status": "active"})
 
 
 crawling_service = RAGCrawlingService()
