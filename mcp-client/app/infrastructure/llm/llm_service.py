@@ -288,7 +288,7 @@ Tool usage principles:
 2) For system status → use health_check
 3) For structured data conversion → use convert_to_json_format
 4) For menu/DB queries → use menu_search
-5) For HTML/Confluence content → use ari_extract_main_blocks and/or ari_markdown_to_json and/or convert_to_json_format
+5) For HTML/Confluence content → use ari_extract_main_content and/or ari_extract_markdown and/or ari_markdown_to_json and/or convert_to_json_format
 
 Response policy:
 - After using tools, produce a concise, high-signal answer based on the results.
@@ -390,7 +390,7 @@ Response policy:
                     'text_classification', 'content_analysis'
                 ],
                 'html_processing': [
-                    'ari_extract_main_blocks', 'ari_markdown_to_json', 'convert_to_json_format',
+                    'ari_extract_main_content', 'ari_extract_markdown', 'ari_markdown_to_json', 'convert_to_json_format',
                     'parse_html', 'extract_tables', 'convert_markdown'
                 ],
                 'db_query': [
