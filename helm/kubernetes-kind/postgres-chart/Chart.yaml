@@ -1,6 +1,0 @@
-apiVersion: v2
-name: postgres
-description: Helm chart for PostgreSQL with DATABASE_URL export
-version: 0.1.0
-appVersion: "15"
-

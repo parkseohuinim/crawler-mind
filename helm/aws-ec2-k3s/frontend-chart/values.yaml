@@ -30,20 +30,7 @@ service:
   port: 3000
 
 ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    # 파일 업로드 크기 제한을 100MB로 설정 (향후 확장성 고려)
-    nginx.ingress.kubernetes.io/client-max-body-size: "100m"
-    # 업로드 타임아웃을 30분으로 설정 (대용량 파일 처리 시간 고려)
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
-  hosts:
-    - host: crawler.alvinpark.xyz
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: [] # Cloudflare Tunnel 사용시 비워둠
+  enabled: false
 
 # Health check 설정
 healthCheck:

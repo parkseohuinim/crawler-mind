@@ -1,0 +1,86 @@
+replicaCount: 1
+
+image:
+  repository: seohuipark/crawler-mind-mcp-client
+  tag: dev
+  pullPolicy: Always
+
+env:
+  MCP_SERVER_URL: "http://mcp-server:4200/my-custom-path/"
+  CORS_ORIGINS: "[\"https://crawler.alvinpark.xyz\",\"https://api.alvinpark.xyz\",\"http://localhost:3000\"]"
+  OPENAI_MODEL: "gpt-4o"
+  # ⚠️ 민감한 정보는 values-secrets.yaml에 저장하세요
+  OPENAI_API_KEY: "YOUR_OPENAI_API_KEY"
+
+  # ⚠️ 민감한 정보는 values-secrets.yaml에 저장하세요
+  DATABASE_URL: "postgresql+asyncpg://postgres:YOUR_RDS_PASSWORD@YOUR_RDS_ENDPOINT:5432/crawler_mind"
+
+  # OpenSearch - HOST와 PORT 둘 다 필요
+  OPENSEARCH_HOST: "https://opensearch.alvinpark.xyz"
+  OPENSEARCH_PORT: "9200"               # 포트 별도 지정
+
+  # Qdrant - HOST와 PORT 둘 다 필요
+  QDRANT_HOST: "https://qdrant.alvinpark.xyz"  # 외부 도메인 또는 "http://qdrant:6333" (내부 서비스)
+  QDRANT_PORT: "6333"                   # 포트 별도 지정
+
+  # 메모리 최적화 설정
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  
+  # 벡터 DB 처리 최적화 설정 (t3.large 기준으로 증가)
+  MAX_WORKERS: "4"
+  EMBEDDING_BATCH_SIZE: "16"
+  QDRANT_BATCH_SIZE: "30"
+  CHUNK_SIZE: "1500"
+  CHUNK_OVERLAP: "100"
+  
+  # 메모리 관리 설정
+  ENABLE_MEMORY_CLEANUP: "true"
+  GC_THRESHOLD: "70"
+  MAX_DOCUMENTS_IN_MEMORY: "50"
+  
+  # 파일 업로드 관련 설정
+  MAX_FILE_SIZE: "500MB"
+  UPLOAD_TIMEOUT: "3600"
+
+# 추가적인 안정성 설정
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# 대용량 파일 처리를 위한 추가 설정
+nodeSelector: {}
+tolerations:
+- key: "memory-pressure"
+  operator: "Exists"
+  effect: "NoSchedule"
+affinity: {}
+
+# HPA 설정 (선택사항 - 필요시 활성화)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 3Gi
+
+# 메모리 사용량 모니터링을 위한 설정
+monitoring:
+  enabled: true
+  memoryThreshold: "80%"
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false

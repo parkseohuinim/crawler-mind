@@ -21,7 +21,7 @@ spec:
         runAsUser: {{ .Values.podSecurityContext.runAsUser }}
         fsGroup: {{ .Values.podSecurityContext.fsGroup }}
 
-      # ✅ initContainer: postgres 준비될 때까지 대기
+      # ✅ initContainer: RDS postgres 준비될 때까지 대기
       initContainers:
         - name: wait-for-postgres
           image: postgres:15
@@ -29,8 +29,8 @@ spec:
             - sh
             - -c
             - >
-              until pg_isready -h postgres -p 5432 -U admin;
-              do echo "⏳ waiting for postgres";
+              until pg_isready -h crawler-mind-db.clz9qjdtgrkx.ap-northeast-2.rds.amazonaws.com -p 5432 -U postgres;
+              do echo "⏳ waiting for RDS postgres";
               sleep 2;
               done;
 

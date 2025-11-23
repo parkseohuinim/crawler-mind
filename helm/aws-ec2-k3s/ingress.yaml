@@ -1,0 +1,57 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crawler-mind-ingress
+  namespace: crawler-mind
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+  # Frontend
+  - host: crawler.alvinpark.xyz
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+  
+  # MCP Client API
+  - host: api.alvinpark.xyz
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mcp-client
+            port:
+              number: 8000
+  
+  # Qdrant
+  - host: qdrant.alvinpark.xyz
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: qdrant
+            port:
+              number: 6333
+  
+  # OpenSearch
+  - host: opensearch.alvinpark.xyz
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: opensearch
+            port:
+              number: 9200
+
