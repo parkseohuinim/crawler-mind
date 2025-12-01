@@ -16,27 +16,43 @@ class MCPService:
         self._tools_cache: List[Dict[str, Any]] = []
         self._connection_lock = asyncio.Lock()
         self._tool_usage_stats: Dict[str, int] = {}  # 도구 사용 통계
+        self._max_retries: int = 3  # 최대 재시도 횟수
+        self._retry_delay: float = 2.0  # 재시도 대기 시간 (초)
         
     async def initialize(self) -> None:
-        """Initialize MCP client connection"""
+        """Initialize MCP client connection with retry logic"""
         async with self._connection_lock:
             if self._client is not None:
                 return
-                
-            try:
-                self._client = Client(settings.mcp_server_url)
-                await self._client.__aenter__()
-                
-                # Cache available tools
-                await self._refresh_tools_cache()
-                
-                logger.info(f"MCP Client connected to {settings.mcp_server_url}")
-                logger.info(f"Available tools: {[tool['name'] for tool in self._tools_cache]}")
-                
-            except Exception as e:
-                logger.error(f"Failed to initialize MCP client: {e}")
-                self._client = None
-                raise MCPConnectionError(f"MCP client initialization failed: {str(e)}")
+            
+            last_error = None
+            for attempt in range(self._max_retries):
+                try:
+                    logger.info(f"🔄 Attempting to connect to MCP Server (attempt {attempt + 1}/{self._max_retries})...")
+                    
+                    self._client = Client(settings.mcp_server_url)
+                    await self._client.__aenter__()
+                    
+                    # Cache available tools
+                    await self._refresh_tools_cache()
+                    
+                    logger.info(f"✅ MCP Client connected to {settings.mcp_server_url}")
+                    logger.info(f"📋 Available tools: {[tool['name'] for tool in self._tools_cache]}")
+                    return
+                    
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"⚠️ Connection attempt {attempt + 1} failed: {e}")
+                    self._client = None
+                    
+                    if attempt < self._max_retries - 1:
+                        wait_time = self._retry_delay * (attempt + 1)  # Exponential backoff
+                        logger.info(f"⏳ Waiting {wait_time}s before retry...")
+                        await asyncio.sleep(wait_time)
+            
+            # All retries failed
+            logger.error(f"❌ Failed to initialize MCP client after {self._max_retries} attempts")
+            raise MCPConnectionError(f"MCP client initialization failed after {self._max_retries} attempts: {str(last_error)}")
     
     async def shutdown(self) -> None:
         """Cleanup MCP client connection"""
@@ -76,9 +92,13 @@ class MCPService:
         return self._tools_cache.copy()
     
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        """Execute a tool on the MCP server"""
+        """Execute a tool on the MCP server with automatic reconnection"""
         if not self.is_connected:
-            raise MCPConnectionError("MCP client not connected")
+            logger.warning("⚠️ MCP client not connected, attempting to reconnect...")
+            try:
+                await self.initialize()
+            except MCPConnectionError:
+                raise MCPConnectionError("MCP client not connected and reconnection failed")
         
         try:
             logger.info(f"🚀 Calling MCP tool: {tool_name} with args: {arguments}")
@@ -93,6 +113,23 @@ class MCPService:
             
         except Exception as e:
             logger.error(f"❌ Tool execution failed - {tool_name}: {e}")
+            
+            # 연결이 끊어진 경우 재연결 시도
+            if "connection" in str(e).lower() or "disconnect" in str(e).lower():
+                logger.warning("🔄 Connection lost, attempting to reconnect and retry...")
+                self._client = None
+                
+                try:
+                    await self.initialize()
+                    # 재연결 후 한 번 더 시도
+                    result = await self._client.call_tool(tool_name, arguments)
+                    self._tool_usage_stats[tool_name] = self._tool_usage_stats.get(tool_name, 0) + 1
+                    logger.info(f"✅ Tool '{tool_name}' executed successfully after reconnection")
+                    return result
+                except Exception as retry_error:
+                    logger.error(f"❌ Retry after reconnection failed: {retry_error}")
+                    raise MCPToolExecutionError(f"Failed to execute tool '{tool_name}' even after reconnection: {str(retry_error)}")
+            
             raise MCPToolExecutionError(f"Failed to execute tool '{tool_name}': {str(e)}")
     
     async def health_check(self) -> Dict[str, Any]:

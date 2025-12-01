@@ -42,7 +42,13 @@ fi
 
 DOCKER_HUB_USERNAME=$1
 DOMAIN=$2
-TAG="dev"
+# 타임스탬프 기반 태그 생성 (예: dev-20251201-123045)
+TAG="dev-$(date +%Y%m%d-%H%M%S)"
+# 또는 git commit hash 사용 (git이 있는 경우)
+# TAG="dev-$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d-%H%M%S)"
+
+# 빌드 캐시 레지스트리 설정
+CACHE_REGISTRY="${DOCKER_HUB_USERNAME}"
 
 echo -e "${GREEN}📦 Docker Hub 사용자: ${DOCKER_HUB_USERNAME}${NC}"
 echo -e "${GREEN}🌐 도메인: ${DOMAIN}${NC}"
@@ -98,11 +104,14 @@ echo ""
 echo -e "${YELLOW}🏗️  [1/4] Frontend 이미지 빌드 및 푸시 중...${NC}"
 echo -e "   - Image: ${FRONTEND_IMAGE}"
 echo -e "   - API URL: ${API_URL}"
+echo -e "   - 🚀 빌드 캐시 활성화"
 docker buildx build \
     --platform linux/amd64 \
     -t ${FRONTEND_IMAGE} \
     -f ./frontend/Dockerfile \
     --build-arg NEXT_PUBLIC_API_BASE_URL="${API_URL}" \
+    --cache-from type=registry,ref=${CACHE_REGISTRY}/crawler-mind-frontend:buildcache \
+    --cache-to type=registry,ref=${CACHE_REGISTRY}/crawler-mind-frontend:buildcache,mode=max \
     ./frontend \
     --push
 
@@ -117,10 +126,13 @@ echo ""
 # 2. MCP Client 빌드
 echo -e "${YELLOW}🏗️  [2/4] MCP Client 이미지 빌드 및 푸시 중...${NC}"
 echo -e "   - Image: ${CLIENT_IMAGE}"
+echo -e "   - 🚀 빌드 캐시 활성화"
 docker buildx build \
     --platform linux/amd64 \
     -t ${CLIENT_IMAGE} \
     -f ./mcp-client/Dockerfile \
+    --cache-from type=registry,ref=${CACHE_REGISTRY}/crawler-mind-mcp-client:buildcache \
+    --cache-to type=registry,ref=${CACHE_REGISTRY}/crawler-mind-mcp-client:buildcache,mode=max \
     . \
     --push
 
@@ -135,10 +147,13 @@ echo ""
 # 3. MCP Server 빌드
 echo -e "${YELLOW}🏗️  [3/4] MCP Server 이미지 빌드 및 푸시 중...${NC}"
 echo -e "   - Image: ${SERVER_IMAGE}"
+echo -e "   - 🚀 빌드 캐시 활성화"
 docker buildx build \
     --platform linux/amd64 \
     -t ${SERVER_IMAGE} \
     -f ./mcp-server/Dockerfile \
+    --cache-from type=registry,ref=${CACHE_REGISTRY}/crawler-mind-mcp-server:buildcache \
+    --cache-to type=registry,ref=${CACHE_REGISTRY}/crawler-mind-mcp-server:buildcache,mode=max \
     . \
     --push
 
@@ -193,9 +208,11 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${YELLOW}🚀 다음 단계:${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "1. ${YELLOW}설정 파일 수정${NC} (아직 안 했다면)"
-echo -e "   cd helm/aws-ec2-k3s"
-echo -e "   # values.yaml 파일들에서 YOUR_* 값 변경"
+echo -e "1. ${YELLOW}이미지 태그 업데이트${NC}"
+echo -e "   # 각 values.yaml에서 tag를 ${TAG}로 변경"
+echo -e "   sed -i 's/tag: dev.*/tag: ${TAG}/' mcp-client-chart/values.yaml"
+echo -e "   sed -i 's/tag: dev.*/tag: ${TAG}/' mcp-server-chart/values.yaml"
+echo -e "   sed -i 's/tag: dev.*/tag: ${TAG}/' frontend-chart/values.yaml"
 echo ""
 echo -e "2. ${YELLOW}EC2로 파일 전송${NC}"
 echo -e "   cd helm"
@@ -204,8 +221,22 @@ echo ""
 echo -e "3. ${YELLOW}EC2에서 배포${NC}"
 echo -e "   ssh -i your-key.pem ubuntu@YOUR_EC2_IP"
 echo -e "   cd ~/aws-ec2-k3s"
-echo -e "   chmod +x deploy.sh"
 echo -e "   ./deploy.sh"
+echo ""
+echo -e "4. ${YELLOW}오래된 이미지 정리 (선택사항)${NC}"
+echo -e "   sudo k3s crictl rmi --prune"
+echo ""
+
+# 자동 태그 업데이트
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${YELLOW}📝 values.yaml 태그 자동 업데이트...${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+cd "${SCRIPT_DIR}"
+sed -i.bak "s/tag: dev.*/tag: ${TAG}/" mcp-client-chart/values.yaml
+sed -i.bak "s/tag: dev.*/tag: ${TAG}/" mcp-server-chart/values.yaml
+sed -i.bak "s/tag: dev.*/tag: ${TAG}/" frontend-chart/values.yaml
+rm -f mcp-client-chart/values.yaml.bak mcp-server-chart/values.yaml.bak frontend-chart/values.yaml.bak
+echo -e "${GREEN}✅ 태그 업데이트 완료: ${TAG}${NC}"
 echo ""
 echo -e "${GREEN}✨ 행운을 빕니다!${NC}"
 echo ""

@@ -35,6 +35,12 @@ kubectl create namespace crawler-mind --dry-run=client -o yaml | kubectl apply -
 echo -e "${GREEN}✅ Namespace 생성 완료${NC}"
 echo ""
 
+# 오래된 이미지 자동 정리
+echo -e "${YELLOW}🧹 오래된 이미지 정리 중...${NC}"
+sudo k3s crictl rmi --prune 2>/dev/null || true
+echo -e "${GREEN}✅ 이미지 정리 완료${NC}"
+echo ""
+
 # 1. Qdrant 배포
 echo -e "${YELLOW}📊 Qdrant 배포 중...${NC}"
 helm upgrade --install qdrant ./qdrant-chart -n crawler-mind
@@ -97,6 +103,13 @@ echo ""
 
 echo -e "${GREEN}✅ 배포 완료!${NC}"
 echo ""
+
+# 실패한 Pod 자동 정리
+echo -e "${YELLOW}🧹 실패한 Pod 정리 중...${NC}"
+kubectl delete pods --field-selector=status.phase=Failed -n crawler-mind 2>/dev/null || true
+echo -e "${GREEN}✅ 정리 완료${NC}"
+echo ""
+
 echo "다음 명령어로 상태를 확인하세요:"
 echo "  kubectl get pods -n crawler-mind"
 echo "  kubectl logs -f -n crawler-mind deployment/mcp-client"

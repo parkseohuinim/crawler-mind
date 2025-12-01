@@ -586,6 +586,7 @@ def ari_parse_html(html_content: str) -> Dict[str, Any]:
 
 async def main():
     # Start MCP server
+    logger.info("🚀 Starting MCP Server on 0.0.0.0:4200")
     await mcp.run_async(
         transport="http",
         host="0.0.0.0",

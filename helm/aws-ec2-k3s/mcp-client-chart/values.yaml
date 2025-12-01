@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: seohuipark/crawler-mind-mcp-client
-  tag: dev
+  tag: dev-20251201-113518
   pullPolicy: Always
 
 env:

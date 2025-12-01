@@ -221,6 +221,8 @@ curl https://opensearch.YOUR_DOMAIN
 
 ## 🛠️ 관리 명령어
 
+### 기본 명령어
+
 ```bash
 # Pod 상태 확인
 kubectl get pods -n crawler-mind
@@ -239,6 +241,24 @@ kubectl top nodes
 # 전체 삭제
 kubectl delete namespace crawler-mind
 ```
+
+### MCP Client 재기동
+
+```bash
+# 가장 간단한 방법 (권장)
+kubectl rollout restart deployment/mcp-client -n crawler-mind
+
+# 또는 Pod 삭제 (자동으로 재생성됨)
+kubectl delete pod -l app=mcp-client -n crawler-mind
+
+# 재시작 상태 확인
+kubectl rollout status deployment/mcp-client -n crawler-mind
+kubectl get pods -n crawler-mind
+```
+
+**MCP Server 재기동 시**:
+- MCP Client에 자동 재연결 로직이 추가되어 있어 Server 재시작 후에도 자동으로 재연결됩니다
+- Init Container가 Server 준비를 기다리므로 안전하게 동시에 재시작 가능합니다
 
 ---
 
