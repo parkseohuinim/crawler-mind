@@ -12,6 +12,11 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 
 from app.application.crawler.tools_client import crawler_tools
+from app.application.crawler.page_handlers import (
+    route_url,
+    get_handler_for_url,
+    page_handler_client,
+)
 from app.domains.menu.entities.menu_link import MenuLink
 from app.models import CrawlingResult, TaskResult, TaskStatus
 from app.shared.database.base import get_database_session
@@ -176,30 +181,95 @@ class RAGCrawlingService:
             logger.info(f"📄 URL {idx}/{len(urls)} 처리 시작: {url}")
             await self._send_update(task_id, "status", {"message": f"크롤링 진행: {idx}/{len(urls)} - {url}", "status": "active"})
             try:
-                tool_result = await crawler_tools.scrape(url)
-                if tool_result.get("success"):
-                    result_data = {
-                        "url": url,
-                        "title": tool_result.get("title"),
-                        "html_content": tool_result.get("html_content", ""),
-                        "markdown": tool_result.get("markdown", ""),
-                    }
-                    results.append(result_data)
-                    logger.info(f"✅ URL {idx}/{len(urls)} 크롤링 성공: {url} - 제목: {result_data.get('title')}")
+                # 1. 먼저 page_handlers에서 매칭되는 핸들러 확인
+                handler_info = get_handler_for_url(url)
+                
+                if handler_info:
+                    # 전용 핸들러가 있는 경우 route_url 사용
+                    pattern, handler_func = handler_info
+                    logger.info(f"🎯 전용 핸들러 발견: {handler_func.__name__} for {url}")
+                    await self._send_update(
+                        task_id, 
+                        "status", 
+                        {"message": f"전용 핸들러 실행: {handler_func.__name__}", "status": "active"}
+                    )
                     
-                    # 즉시 마크다운 파일 저장
-                    await self._save_single_markdown_file(task_id, result_data, idx, len(urls))
+                    handler_result = await route_url(url, page_handler_client)
                     
+                    if handler_result:
+                        # 핸들러 결과 처리 - menus/datas 구조인 경우
+                        if "datas" in handler_result and handler_result.get("datas"):
+                            # 목록 핸들러 결과 (여러 항목 반환)
+                            for data_item in handler_result["datas"]:
+                                result_data = {
+                                    "url": data_item.get("url", url),
+                                    "title": data_item.get("title"),
+                                    "html_content": data_item.get("html", ""),
+                                    "markdown": data_item.get("markdown", ""),
+                                    "special_processed": True,
+                                    "handler_name": handler_func.__name__,
+                                }
+                                results.append(result_data)
+                                await self._save_single_markdown_file(task_id, result_data, idx, len(urls))
+                            logger.info(f"✅ 핸들러 처리 완료: {len(handler_result['datas'])}개 항목")
+                        else:
+                            # 단일 결과 핸들러
+                            result_data = {
+                                "url": url,
+                                "title": handler_result.get("title"),
+                                "html_content": handler_result.get("html", ""),
+                                "markdown": handler_result.get("markdown", ""),
+                                "special_processed": True,
+                                "handler_name": handler_func.__name__,
+                            }
+                            results.append(result_data)
+                            logger.info(f"✅ URL {idx}/{len(urls)} 핸들러 처리 성공: {url}")
+                            await self._save_single_markdown_file(task_id, result_data, idx, len(urls))
+                    else:
+                        # 핸들러 실패 시 기본 스크래핑으로 폴백
+                        logger.warning(f"⚠️ 핸들러 실패, 기본 스크래핑으로 폴백: {url}")
+                        await self._scrape_with_default_tool(task_id, url, idx, len(urls), results)
                 else:
-                    error_result = {"url": url, "error": tool_result.get("error", "알 수 없는 오류"), "success": False}
-                    results.append(error_result)
-                    logger.warning(f"⚠️ URL {idx}/{len(urls)} 크롤링 실패: {url} - {error_result.get('error')}")
+                    # 2. 전용 핸들러가 없는 경우 기본 MCP 스크래핑
+                    await self._scrape_with_default_tool(task_id, url, idx, len(urls), results)
+                    
             except Exception as exc:  # pragma: no cover
-                logger.error(f"❌ URL {idx}/{len(urls)} MCP scrape failed: {url} - {exc}")
+                logger.error(f"❌ URL {idx}/{len(urls)} 처리 실패: {url} - {exc}")
                 results.append({"url": url, "error": str(exc), "success": False})
         
-        logger.info(f"✅ 스크래핑 완료: 총 {len(results)}개 결과 (성공: {len([r for r in results if r.get('success', True)])}개)")
+        logger.info(f"✅ 스크래핑 완료: 총 {len(results)}개 결과 (성공: {len([r for r in results if not r.get('error')])}개)")
         return results
+
+    async def _scrape_with_default_tool(
+        self, 
+        task_id: str, 
+        url: str, 
+        idx: int, 
+        total: int, 
+        results: List[Dict[str, Any]]
+    ) -> None:
+        """기본 MCP 스크래핑 도구를 사용하여 URL 처리"""
+        try:
+            tool_result = await crawler_tools.scrape(url)
+            if tool_result.get("success"):
+                result_data = {
+                    "url": url,
+                    "title": tool_result.get("title"),
+                    "html_content": tool_result.get("html_content", ""),
+                    "markdown": tool_result.get("markdown", ""),
+                }
+                results.append(result_data)
+                logger.info(f"✅ URL {idx}/{total} 크롤링 성공: {url} - 제목: {result_data.get('title')}")
+                
+                # 즉시 마크다운 파일 저장
+                await self._save_single_markdown_file(task_id, result_data, idx, total)
+            else:
+                error_result = {"url": url, "error": tool_result.get("error", "알 수 없는 오류"), "success": False}
+                results.append(error_result)
+                logger.warning(f"⚠️ URL {idx}/{total} 크롤링 실패: {url} - {error_result.get('error')}")
+        except Exception as exc:
+            logger.error(f"❌ URL {idx}/{total} MCP scrape failed: {url} - {exc}")
+            results.append({"url": url, "error": str(exc), "success": False})
 
     async def _preprocess_data(self, task_id: str, scraped_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         processed: List[Dict[str, Any]] = []

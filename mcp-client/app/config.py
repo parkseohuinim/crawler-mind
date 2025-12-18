@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     # Database Configuration
     database_url: str = "postgresql+asyncpg://user:password@localhost:5432/crawler_mind"
     
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # If database_url is empty string from env, use default
+        if self.database_url == "":
+            self.database_url = "postgresql+asyncpg://user:password@localhost:5432/crawler_mind"
+        
+        # Validate database_url is not empty after processing
+        if not self.database_url or not self.database_url.strip():
+            raise ValueError(
+                "DATABASE_URL이 유효하지 않습니다. "
+                ".env 파일에 올바른 DATABASE_URL을 설정해주세요. "
+                "예: postgresql+asyncpg://user:password@localhost:5432/crawler_mind"
+            )
+    
     # Vector Database Configuration (Qdrant)
     qdrant_host: str = "127.0.0.1"
     qdrant_port: int = 6333

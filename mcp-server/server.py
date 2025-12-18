@@ -130,6 +130,7 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
     RAG용 웹 크롤링: 불필요한 요소 제거 및 마크다운 변환
     - 헤더/푸터/네비게이션 등 제거하여 본문만 추출
     - markdownify로 깔끔한 텍스트 변환
+    - 타임아웃 시 자동 재시도
     - 성공 시: { success, url, title, html_content, markdown, status_code }
     - 실패 시: { success: False, url, error }
     """
@@ -153,9 +154,25 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
         crawler = AsyncWebCrawler(config=browser_config)
         await crawler.start()
         try:
-            is_js_heavy = any(d in url.lower() for d in [
-                "google.com", "youtube.com", "facebook.com", "instagram.com", "twitter.com",
-            ])
+            # JavaScript 의존 사이트 감지 (확장된 목록)
+            js_heavy_domains = [
+                "google.com", "gmail.com", "youtube.com",
+                "facebook.com", "twitter.com", "instagram.com",
+                "linkedin.com", "reddit.com"
+            ]
+            is_js_heavy = any(d in url.lower() for d in js_heavy_domains)
+            
+            # 확장된 제외 셀렉터
+            excluded_selector = (
+                "#cfmClHeader, #cfmClFooter, #cfmClSkip, .location, .sns-area, .find-center, "
+                ".header-area, .footer-area, .nav, .navigation, .sidebar, .advertisement, "
+                ".banner, .popup, .modal, .overlay, .sns-share, .sns-list, "
+                ".swiper-controls-wrapper, .opage-hashtag-arrow, .swiper-button-next, .swiper-button-prev, "
+                ".N-compare-suggest-list, .top-three-box, "
+                "#kt_mb, .kt_mb, .sticky, .quickMenu, #kt-head, .kt-head, "
+                ".bnr_info, .share_wrap, #popupVideo, #popupVideoNo, #popupShortsNo, #popupDownload, #popupConsulting"
+            )
+            
             run_config = CrawlerRunConfig(
                 verbose=False,
                 word_count_threshold=10,
@@ -166,7 +183,7 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
                 js_only=False,
                 cache_mode=CacheMode.BYPASS,
                 excluded_tags=['form', 'header', 'footer', 'nav'],
-                excluded_selector="#cfmClHeader, #cfmClFooter, #cfmClSkip, .location, .sns-area",
+                excluded_selector=excluded_selector,
                 wait_until="networkidle" if is_js_heavy else "domcontentloaded",
                 delay_before_return_html=12 if is_js_heavy else 6,
                 simulate_user=is_js_heavy,
@@ -175,6 +192,37 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
             )
 
             result = await crawler.arun(url=url, config=run_config)
+            
+            # 타임아웃 에러인 경우 재시도
+            if not result.success:
+                error_msg = result.error_message or ""
+                is_timeout = "timeout" in error_msg.lower() or "Timeout" in error_msg
+                
+                if is_timeout:
+                    logger.warning(f"[MCP] 타임아웃 발생, 재시도 중: {url}")
+                    # 더 관대한 설정으로 재시도
+                    retry_config = CrawlerRunConfig(
+                        verbose=False,
+                        word_count_threshold=10,
+                        exclude_external_links=True,
+                        remove_overlay_elements=False,
+                        process_iframes=False,  # iframe 처리 비활성화로 속도 향상
+                        ignore_body_visibility=True,
+                        js_only=False,
+                        cache_mode=CacheMode.BYPASS,
+                        excluded_tags=['form', 'header', 'footer', 'nav'],
+                        excluded_selector=excluded_selector,
+                        wait_until="domcontentloaded",  # networkidle 대신 사용
+                        delay_before_return_html=3,  # 대기 시간 단축
+                        simulate_user=False,
+                        override_navigator=False,
+                        page_timeout=180000,  # 3분으로 타임아웃 증가
+                    )
+                    
+                    result = await crawler.arun(url=url, config=retry_config)
+                    if result.success:
+                        logger.info(f"[MCP] 재시도 성공: {url}")
+                
             if not result.success:
                 logger.error(f"[MCP] crawl4ai 실패: {result.error_message}")
                 # 폴백: Playwright 시도
@@ -188,6 +236,10 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
                     }
 
             html_content = result.html or ""
+            # html_content가 list면 join
+            if isinstance(html_content, list):
+                html_content = "\n".join([str(x) for x in html_content])
+                
             status_code = getattr(result, 'status_code', None)
             title = None
             meta = getattr(result, 'metadata', None)
@@ -201,18 +253,43 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
                 from bs4 import BeautifulSoup
                 from markdownify import markdownify as md
                 soup = BeautifulSoup(html_content, 'html.parser')
+                
                 # include_selector가 주어지면 해당 영역만 변환 대상으로 제한
                 if include_selector:
                     sel = include_selector if include_selector.startswith(('#', '.', '[', ':')) else f"#{include_selector}"
                     selected = soup.select_one(sel)
                     if selected:
                         soup = BeautifulSoup(str(selected), 'html.parser')
-                for sel in [
-                    "#cfmClHeader", "#cfmClFooter", "#cfmClSkip", ".header", ".footer",
-                    ".navigation", ".sidebar", ".banner", ".popup", ".overlay", ".sns-area",
-                ]:
+                
+                # 확장된 제외 셀렉터 목록 (crawl4ai_engine.py 참고)
+                excluded_selectors = [
+                    "#cfmClHeader", "#cfmClFooter", "#cfmClSkip",
+                    ".header", ".footer", ".header-area", ".footer-area",
+                    ".nav", ".navigation", ".sidebar", ".advertisement",
+                    ".banner", ".popup", ".modal", ".overlay", ".sns-share", ".sns-list",
+                    ".sns.twitter", ".sns.facebook", ".sns.kakao", ".sns.youtube",
+                    ".swiper-controls-wrapper", ".opage-hashtag-arrow", ".swiper-button-next", ".swiper-button-prev",
+                    ".icon.kakao", ".icon.facebook", ".icon.twitter", ".icon.youtube",
+                    ".btn-twitter", ".btn-facebook", ".btn-kakao", ".btn-youtube",
+                    ".location", ".sns-area", ".opener", "a[onclick*='KT_trackClicks']",
+                    ".find-center",
+                    ".N-compare-suggest-list", ".top-three-box",
+                    "#kt_mb", ".kt_mb", ".sticky", ".quickMenu", "#kt-head", ".kt-head",
+                    ".bnr_info", ".share_wrap", "#popupVideo", "#popupVideoNo", "#popupShortsNo", "#popupDownload", "#popupConsulting",
+                ]
+                for sel in excluded_selectors:
                     for el in soup.select(sel):
                         el.decompose()
+                
+                # 숨겨진 요소들 제거
+                for tag in soup.select('[style*="display:none"]'):
+                    tag.decompose()
+                for tag in soup.select('.invisible'):
+                    tag.decompose()
+                # 레이어 팝업 제거
+                for tag in soup.select('.layerPop'):
+                    tag.decompose()
+                    
                 for t in soup(["script", "style", "noscript"]):
                     t.decompose()
                 cleaned_html = str(soup)

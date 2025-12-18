@@ -245,3 +245,6 @@ package-lock.json
 # Helm secrets
 helm/**/values-secrets.yaml
 **/values-secrets.yaml
+
+# Result files
+*.json

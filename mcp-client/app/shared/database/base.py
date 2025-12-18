@@ -46,6 +46,7 @@ async def init_database():
     # Import all models to ensure they're registered with Base
     from app.domains.menu.entities.menu_link import MenuLink
     from app.domains.menu.entities.menu_manager import MenuManagerInfo
+    from app.domains.crawler.entities.input_url import InputUrl
     
     async with engine.begin() as conn:
         # Create tables if they don't exist

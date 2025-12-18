@@ -43,6 +43,9 @@ def setup_logging() -> None:
     logging.getLogger("app.infrastructure.vectordb.qdrant_service").setLevel(logging.INFO)
     logging.getLogger("app.infrastructure.search.opensearch_service").setLevel(logging.INFO)
     logging.getLogger("app.infrastructure.llm.llm_service").setLevel(logging.INFO)
+    
+    # 크롤링 핸들러 로그 레벨을 WARNING으로 (상세 진행 로그 숨김)
+    # logging.getLogger("app.application.crawler.page_handlers.handlers").setLevel(logging.WARNING)
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance with the given name"""

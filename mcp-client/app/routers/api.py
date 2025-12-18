@@ -644,3 +644,140 @@ router.include_router(rag_router)
 
 # Include JSON Compare router
 router.include_router(json_compare_router)
+
+
+# === Daily Crawling Endpoints ===
+
+from app.application.crawler.daily_crawling_service import daily_crawling_service
+from app.domains.crawler.schemas.daily_crawl_schemas import (
+    DailyCrawlRequest,
+    DailyCrawlTaskResponse,
+    DailyCrawlStats,
+)
+from app.domains.crawler.repositories.input_url_repository import input_url_repository
+
+
+@router.post("/daily-crawling", response_model=DailyCrawlTaskResponse, tags=["daily-crawling"])
+async def create_daily_crawl_task(request: DailyCrawlRequest = None):
+    """
+    Daily Crawling 태스크 생성
+    
+    input_urls 테이블에서 활성화된 URL을 조회하여 크롤링하고,
+    결과를 menu_links 테이블에 업데이트합니다.
+    
+    Args:
+        force_recrawl: 이미 성공한 URL도 재크롤링 여부 (기본: True)
+        limit: 최대 크롤링 URL 수 (기본: None = 전체, url_ids 지정 시 무시)
+        url_ids: 테스트용 - 특정 input_urls ID 목록 (지정 시 해당 ID만 크롤링)
+        mode: 실행 모드 - "sequential"(순차) 또는 "parallel"(병렬) (기본: parallel)
+        concurrency: 병렬 실행 시 동시 처리 수 (1~50, 기본: 20)
+        update_menu_links: menu_links DB 업데이트 여부 (기본: True)
+    """
+    try:
+        if not mcp_service.is_connected:
+            raise HTTPException(status_code=503, detail="MCP 서버에 연결되지 않음")
+        
+        # 기본값 처리 (Daily Crawling은 매일 전체 병렬 크롤링)
+        force_recrawl = request.force_recrawl if request else True
+        limit = request.limit if request else None
+        url_ids = request.url_ids if request else None
+        mode = request.mode if request else "parallel"
+        concurrency = request.concurrency if request else 20
+        update_menu_links = request.update_menu_links if request else True
+        
+        # 크롤링 대상 URL 수 확인
+        if url_ids:
+            # 특정 ID로 조회 (테스트용)
+            urls = await input_url_repository.get_by_ids(url_ids)
+        else:
+            urls = await input_url_repository.get_active_urls(force_recrawl=force_recrawl, limit=limit)
+        
+        if not urls:
+            return DailyCrawlTaskResponse(
+                task_id="",
+                total_urls=0,
+                message="크롤링 대상 URL이 없습니다"
+            )
+        
+        # 태스크 생성
+        task_id = daily_crawling_service.create_task(
+            force_recrawl=force_recrawl,
+            limit=limit,
+            url_ids=url_ids,
+            mode=mode,
+            concurrency=concurrency,
+            update_menu_links=update_menu_links
+        )
+        
+        mode_text = "병렬" if mode == "parallel" else "순차"
+        db_text = "" if update_menu_links else ", DB 업데이트 스킵"
+        test_text = f" [테스트: ID {url_ids}]" if url_ids else ""
+        logger.info(f"✅ Daily Crawling task created: {task_id} ({len(urls)} URLs, {mode_text} 모드{db_text}{test_text})")
+        
+        return DailyCrawlTaskResponse(
+            task_id=task_id,
+            total_urls=len(urls),
+            message=f"Daily Crawling 시작: {len(urls)}개 URL ({mode_text} 모드{db_text}){test_text}"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Daily Crawling task creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Daily Crawling 작업 생성 실패: {str(e)}")
+
+
+@router.get("/daily-crawling/{task_id}", response_model=TaskResult, tags=["daily-crawling"])
+async def get_daily_crawl_task(task_id: str = Path(..., description="Task ID")):
+    """Daily Crawling 태스크 상태 조회"""
+    try:
+        task = daily_crawling_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+        
+        return task
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Daily Crawling task retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Daily Crawling 작업 조회 실패: {str(e)}")
+
+
+@router.get("/daily-crawling/{task_id}/stream", tags=["daily-crawling"])
+async def stream_daily_crawl_task(task_id: str = Path(..., description="Task ID")):
+    """Daily Crawling 태스크 SSE 스트림"""
+    try:
+        task = daily_crawling_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+        
+        logger.info(f"🎯 Daily Crawling SSE stream requested: {task_id}")
+        
+        return StreamingResponse(
+            daily_crawling_service.get_task_stream(task_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Cache-Control",
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Daily Crawling SSE stream failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Daily Crawling 스트림 생성 실패: {str(e)}")
+
+
+@router.get("/daily-crawling/stats", response_model=DailyCrawlStats, tags=["daily-crawling"])
+async def get_daily_crawl_stats():
+    """Daily Crawling 통계 조회"""
+    try:
+        stats = await input_url_repository.get_stats()
+        return DailyCrawlStats(**stats)
+    except Exception as e:
+        logger.error(f"Daily Crawling stats failed: {e}")
+        raise HTTPException(status_code=500, detail=f"통계 조회 실패: {str(e)}")
