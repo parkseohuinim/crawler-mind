@@ -18,7 +18,8 @@ from ..utils import (
     sanitize_filename, 
     format_content, 
     create_markdown, 
-    to_mglobalroaming_url
+    to_mglobalroaming_url,
+    smart_goto
 )
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,7 @@ async def handle_roaming_notice(
         page = await context.new_page()
         
         try:
-            response = await page.goto(url, wait_until='networkidle', timeout=60000)
-            await page.wait_for_timeout(5000)
+            response = await smart_goto(page, url, wait_for_selector='div.txt', timeout=30000)
             
             status_code = response.status if response else None
             if status_code:
@@ -55,12 +55,6 @@ async def handle_roaming_notice(
                     logger.warning(f"⚠️ HTTP {status_code} redirect: {url}")
                 else:
                     logger.info(f"✅ HTTP {status_code}: {url}")
-            
-            try:
-                await page.wait_for_load_state('domcontentloaded', timeout=30000)
-                await page.wait_for_load_state('networkidle', timeout=30000)
-            except Exception as e:
-                logger.warning(f"⚠️ Load timeout: {str(e)}")
             
             metadata = await page.evaluate("""() => {
                 const getText = (sel) => {

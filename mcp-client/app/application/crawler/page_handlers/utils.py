@@ -7,7 +7,7 @@ URL 변환, 파일명 정제, 날짜 포맷팅 등 공용 유틸리티 함수를
 import logging
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 logger = logging.getLogger(__name__)
@@ -153,6 +153,82 @@ def create_markdown(title: str, date: str, content: str) -> str:
 
 {content}
 """
+
+
+async def smart_goto(
+    page,
+    url: str,
+    wait_for_selector: Optional[str] = None,
+    timeout: int = 60000,
+    selector_timeout: int = 100000,
+    extra_wait: int = 6000
+):
+    """
+    효율적인 페이지 로드 함수
+    
+    - domcontentloaded로 빠르게 로드
+    - 필요한 요소만 추가 대기 (없으면 skip)
+    - 불필요한 networkidle 대기 없음
+    
+    Args:
+        page: Playwright page 객체
+        url: 접속할 URL
+        wait_for_selector: 대기할 CSS selector (optional)
+        timeout: goto 타임아웃 (기본 30초)
+        selector_timeout: selector 대기 타임아웃 (기본 10초)
+        extra_wait: 추가 렌더링 대기 (기본 1.5초)
+    
+    Returns:
+        response: Playwright Response 객체
+    """
+    # 1단계: 빠른 DOM 로드
+    response = await page.goto(url, wait_until='domcontentloaded', timeout=timeout)
+    
+    # 2단계: 필요한 요소 대기 (있으면 즉시 진행, 없으면 skip)
+    if wait_for_selector:
+        try:
+            await page.wait_for_selector(wait_for_selector, timeout=selector_timeout)
+        except Exception:
+            logger.debug(f"🔍 Selector not found, continuing: {wait_for_selector}")
+    
+    # 3단계: JS 렌더링 버퍼
+    if extra_wait > 0:
+        await page.wait_for_timeout(extra_wait)
+    
+    return response
+
+
+async def smart_goto_with_status(
+    page,
+    url: str,
+    wait_for_selector: Optional[str] = None,
+    timeout: int = 30000,
+    selector_timeout: int = 10000,
+    extra_wait: int = 1500
+):
+    """
+    smart_goto + HTTP 상태 코드 로깅
+    
+    Returns:
+        tuple: (response, status_code)
+    """
+    response = await smart_goto(
+        page, url, 
+        wait_for_selector=wait_for_selector,
+        timeout=timeout,
+        selector_timeout=selector_timeout,
+        extra_wait=extra_wait
+    )
+    
+    status_code = response.status if response else None
+    
+    if status_code:
+        if status_code >= 400:
+            logger.error(f"❌ HTTP {status_code}: {url}")
+        elif status_code >= 300:
+            logger.warning(f"⚠️ HTTP {status_code} redirect: {url}")
+    
+    return response, status_code
 
 
 

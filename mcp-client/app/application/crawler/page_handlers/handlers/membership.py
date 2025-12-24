@@ -11,6 +11,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
+from ..utils import smart_goto
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,7 @@ async def handle_membership_partner_list_playwright(url: str, fclient: Any, menu
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-        response = await page.goto(url, wait_until="networkidle", timeout=60000)
-        await page.wait_for_timeout(2000)
+        response = await smart_goto(page, url, wait_for_selector='#btnMoreData', timeout=30000)
         
         # HTTP 상태 코드 확인
         status_code = response.status if response else None
@@ -87,8 +87,7 @@ async def handle_membership_faq_all_playwright(url: str, fclient: Any, menu: Opt
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-        response = await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-        await page.wait_for_timeout(3000)
+        response = await smart_goto(page, url, wait_for_selector='iframe#cpEvent', timeout=30000)
         
         # HTTP 상태 코드 확인 및 로깅
         status_code = response.status if response else None

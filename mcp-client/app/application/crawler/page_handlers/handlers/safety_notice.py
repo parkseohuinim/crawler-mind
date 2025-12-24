@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import sanitize_filename, format_content, create_markdown
+from ..utils import sanitize_filename, format_content, create_markdown, smart_goto
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +42,11 @@ async def handle_safety_notice_detail(
             )
             page = await context.new_page()
             
-            response = await page.goto(url, wait_until='networkidle', timeout=60000)
-            await page.wait_for_timeout(5000)
+            response = await smart_goto(page, url, wait_for_selector='.txt-content', timeout=30000)
             
             status_code = response.status if response else None
             if status_code and status_code >= 400:
                 logger.error(f"❌ HTTP {status_code}: {url}")
-            
-            try:
-                await page.wait_for_load_state('domcontentloaded', timeout=30000)
-                await page.wait_for_load_state('networkidle', timeout=30000)
-            except Exception as e:
-                logger.warning(f"⚠️ Load timeout: {str(e)}")
             
             title = await page.evaluate("""() => {
                 const t = document.querySelector('h1.title');

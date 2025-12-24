@@ -432,10 +432,24 @@ class DailyCrawlingService:
         skip_timeout = False
         if handler_info:
             _, handler_func = handler_info
-            if "_main" in handler_func.__name__:
-                # 다중 결과 핸들러: 개별 상세 페이지에 자체 타임아웃이 있으므로 전체 타임아웃 미적용
+            handler_name = handler_func.__name__
+            
+            # 다중 페이지 순회 핸들러 패턴들
+            multi_page_patterns = [
+                "_main",  # 기존: 다중 결과 메인 핸들러
+                "_list",  # 목록 핸들러 (내부에서 상세 페이지 순회)
+                "gigagenie_faq",  # FAQ 전체 페이지 순회
+                "gigagenie_news",  # 뉴스 전체 페이지 순회
+                "winner_announcements",  # 당첨자발표 페이지네이션 + 상세 순회
+            ]
+            
+            # 패턴 매칭 확인
+            is_multi_page = any(pattern in handler_name for pattern in multi_page_patterns)
+            
+            if is_multi_page:
+                # 다중 페이지 순회 핸들러: 전체 타임아웃 미적용 (개별 페이지에 자체 타임아웃)
                 skip_timeout = True
-                logger.info(f"🔗 Multi-result handler, no global timeout: {handler_func.__name__}")
+                logger.info(f"🔗 Multi-page handler detected, skipping global timeout: {handler_name}")
             else:
                 # 일반 핸들러: 3분(180초) 타임아웃
                 timeout = 180
@@ -674,6 +688,12 @@ class DailyCrawlingService:
         # 메타데이터 추출
         metadata = self._extract_metadata(html_content, url)
         
+        # recommendations 필드 추가 (상품 페이지에서 사용)
+        if "recommendations" in processed_result:
+            recommendations = processed_result.get("recommendations")
+            if recommendations:  # 빈 리스트가 아닌 경우에만 추가
+                metadata["recommendations"] = recommendations
+        
         # 최종 JSON 구조
         json_data = {
             "docId": document_id or "",
@@ -846,6 +866,10 @@ class DailyCrawlingService:
                                 "is_handler_data": True,  # 핸들러 데이터 표시
                             }
                             
+                            # recommendations 필드 포함 (있는 경우)
+                            if "recommendations" in data:
+                                single_result["recommendations"] = data["recommendations"]
+                            
                             # menu_links 업데이트 (docId 획득)
                             document_id = None
                             if update_menu_links:
@@ -858,8 +882,9 @@ class DailyCrawlingService:
                             self._collected_results[task_id].append(json_data)
                         
                         # input_urls 상태 업데이트 (한 번만)
+                        handler_name = processed_result.get("handler_name")
                         await input_url_repository.update_crawl_status(
-                            input_url.id, "success"
+                            input_url.id, "success", handler_name=handler_name
                         )
                         success_count += 1
                     else:
@@ -876,8 +901,9 @@ class DailyCrawlingService:
                         self._collected_results[task_id].append(json_data)
                         
                         # input_urls 상태 업데이트
+                        handler_name = processed_result.get("handler_name")
                         await input_url_repository.update_crawl_status(
-                            input_url.id, "success"
+                            input_url.id, "success", handler_name=handler_name
                         )
                         success_count += 1
                 else:

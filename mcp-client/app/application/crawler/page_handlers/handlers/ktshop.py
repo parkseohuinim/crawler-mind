@@ -15,7 +15,7 @@ from markdownify import markdownify as md
 from bs4 import BeautifulSoup
 
 from ..handler_registry import register_page_handler
-from ..utils import to_mshop_url, sanitize_filename
+from ..utils import to_mshop_url, sanitize_filename, smart_goto
 
 logger = logging.getLogger(__name__)
 
@@ -557,19 +557,11 @@ async def handle_accessory_detail(url: str, fclient: Any, context=None) -> Optio
         status_detail = None
         try:
             try:
-                response_detail = await page.goto(url, wait_until='networkidle', timeout=60000)
-            except AsyncTimeoutError:
-                try:
-                    response_detail = await page.goto(url, wait_until='load', timeout=45000)
-                except AsyncTimeoutError:
-                    try:
-                        response_detail = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-                    except AsyncTimeoutError:
-                        logger.error(f"❌ Detail page timeout")
-                        return None
+                response_detail = await smart_goto(page, url, wait_for_selector='.ui-prd_tit', timeout=30000)
+            except Exception:
+                logger.error(f"❌ Detail page timeout")
+                return None
             status_detail = response_detail.status if response_detail else None
-
-            await page.wait_for_timeout(1500)
 
             title = await page.evaluate("document.querySelector('.ui-prd_tit')?.textContent?.trim() || ''")
             info_html = await page.evaluate("document.querySelector('.ui-view-info')?.outerHTML || ''")
@@ -630,10 +622,8 @@ async def handle_accessory_display_list(url: str, fclient: Any, menu: Optional[s
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         )
         page = await context.new_page()
-        response = await page.goto(url, wait_until='networkidle', timeout=60000)
+        response = await smart_goto(page, url, wait_for_selector='ul.ui-access-prdLst', timeout=30000)
         status_code = response.status if response else None
-
-        await page.wait_for_timeout(1500)
 
         async def extract_items() -> List[Dict[str, Any]]:
             return await page.evaluate("""() => {

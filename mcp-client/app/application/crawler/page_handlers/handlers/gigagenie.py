@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import to_gigagenie_murl
+from ..utils import to_gigagenie_murl, smart_goto
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,7 @@ async def handle_gigagenie_detail(
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-        response = await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-        await page.wait_for_timeout(3000)
+        response = await smart_goto(page, url, wait_for_selector="#depth2Level", timeout=30000)
         
         status_code = response.status if response else None
         if status_code and status_code >= 400:

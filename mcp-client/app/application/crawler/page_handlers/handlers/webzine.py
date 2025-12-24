@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import to_mshop_url, sanitize_filename
+from ..utils import to_mshop_url, sanitize_filename, smart_goto
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,7 @@ async def handle_webzine_list(
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         )
         page = await context.new_page()
-        response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
-        await page.wait_for_timeout(2500)
-
-        try:
-            await page.wait_for_selector('ul.webzine_list', timeout=20000)
-        except Exception:
-            logger.warning("⚠️ Failed to find ul.webzine_list element")
+        response = await smart_goto(page, url, wait_for_selector='ul.webzine_list', timeout=30000)
 
         status_code = response.status if response else None
         if status_code and status_code >= 400:

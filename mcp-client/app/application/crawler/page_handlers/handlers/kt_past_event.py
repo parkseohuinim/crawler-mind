@@ -15,6 +15,7 @@ from markdownify import markdownify as md
 from bs4 import BeautifulSoup
 
 from ..handler_registry import register_page_handler
+from ..utils import smart_goto
 
 logger = logging.getLogger(__name__)
 
@@ -61,20 +62,7 @@ async def handle_kt_past_event_detail(
         page = await context.new_page()
         
         try:
-            max_retries = 3
-            retry_count = 0
-            response = None
-            
-            while retry_count < max_retries:
-                try:
-                    response = await page.goto(url, wait_until='networkidle', timeout=60000)
-                    await page.wait_for_timeout(5000)
-                    break
-                except Exception as e:
-                    retry_count += 1
-                    if retry_count >= max_retries:
-                        raise e
-                    await page.wait_for_timeout(3000)
+            response = await smart_goto(page, url, wait_for_selector='.contents', timeout=30000, extra_wait=2000)
             
             status_code = response.status if response else None
             if status_code and status_code >= 400:
@@ -165,8 +153,7 @@ async def handle_kt_past_event_detail(
             if event_info.get('iframe_src'):
                 try:
                     iframe_page = await context.new_page()
-                    await iframe_page.goto(event_info['iframe_src'], wait_until='networkidle', timeout=60000)
-                    await iframe_page.wait_for_timeout(8000)
+                    await smart_goto(iframe_page, event_info['iframe_src'], timeout=30000, extra_wait=3000)
                     
                     iframe_data = await iframe_page.evaluate("""() => {
                         const elementsToRemove = document.querySelectorAll('script, style, noscript, .ad, .banner, .popup');
@@ -274,8 +261,7 @@ async def handle_kt_past_event_main(
         page = await context.new_page()
         
         try:
-            response = await page.goto(url, wait_until='networkidle', timeout=60000)
-            await page.wait_for_timeout(5000)
+            response = await smart_goto(page, url, wait_for_selector='.pagination', timeout=30000, extra_wait=2000)
             
             status_code = response.status if response else None
             if status_code and status_code >= 400:
@@ -441,9 +427,9 @@ async def handle_kt_past_event_main(
                 "markdown": entry_page_markdown,
                 "html": entry_page_html,
                 "url": url,
-                "title": f"{menu or 'KT 지난 이벤트'} 목록",  # title 추가
+                "title": menu or "지난 이벤트",  # title 추가
                 "metadata": {
-                    "title": f"{menu or 'KT 지난 이벤트'} 목록",
+                    "title": menu or "지난 이벤트",
                     "is_entry_page": True,
                     "total_events": len(all_event_infos),
                     "total_pages": total_pages,
@@ -577,14 +563,14 @@ async def handle_kt_past_event_main(
 
 
 # 핸들러 등록
-register_page_handler(
-    r'https?://event\.kt\.com/html/event/past_event_list\.html',
-    handle_kt_past_event_main
-)
+# register_page_handler(
+#     r'https?://event\.kt\.com/html/event/past_event_list\.html',
+#     handle_kt_past_event_main
+# )
 
-register_page_handler(
-    r'https?://event\.kt\.com/html/event/past_event_view\.html\?.*pcEvtNo=\d+',
-    handle_kt_past_event_detail
-)
+# register_page_handler(
+#     r'https?://event\.kt\.com/html/event/past_event_view\.html\?.*pcEvtNo=\d+',
+#     handle_kt_past_event_detail
+# )
 
 

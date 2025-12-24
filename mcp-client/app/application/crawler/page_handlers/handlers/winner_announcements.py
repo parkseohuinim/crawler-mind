@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import to_mshop_url
+from ..utils import to_mshop_url, smart_goto
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ async def handle_event_winner_announcements(
                             detail_page = await context.new_page()
                             
                             # 목록 페이지로 이동
-                            await detail_page.goto("https://shop.kt.com/plan/planDispEvent.do", wait_until='networkidle', timeout=60000)
+                            await smart_goto(detail_page, "https://shop.kt.com/plan/planDispEvent.do", timeout=30000)
                             
                             # eventListView 함수 실행하여 상세 페이지로 이동
                             await detail_page.evaluate(f"""

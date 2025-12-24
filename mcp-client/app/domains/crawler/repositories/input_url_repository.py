@@ -96,7 +96,8 @@ class InputUrlRepository:
         self,
         url_id: int,
         status: str,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        handler_name: Optional[str] = None
     ) -> None:
         """
         크롤링 상태 업데이트
@@ -105,21 +106,28 @@ class InputUrlRepository:
             url_id: InputUrl ID
             status: 'success', 'failed', 'skipped'
             error: 에러 메시지 (실패 시)
+            handler_name: 사용된 핸들러 이름 (선택)
         """
         async for session in get_database_session():
+            update_values = {
+                "last_crawled_at": datetime.now(),
+                "last_status": status,
+                "last_error": error,
+                "updated_at": datetime.now()
+            }
+            
+            # handler_name이 제공된 경우에만 업데이트
+            if handler_name is not None:
+                update_values["handler_name"] = handler_name
+            
             stmt = (
                 update(InputUrl)
                 .where(InputUrl.id == url_id)
-                .values(
-                    last_crawled_at=datetime.now(),
-                    last_status=status,
-                    last_error=error,
-                    updated_at=datetime.now()
-                )
+                .values(**update_values)
             )
             await session.execute(stmt)
             await session.commit()
-            logger.debug(f"✅ URL {url_id} 상태 업데이트: {status}")
+            logger.debug(f"✅ URL {url_id} 상태 업데이트: {status}" + (f", handler: {handler_name}" if handler_name else ""))
             break
     
     async def get_stats(self) -> dict:
