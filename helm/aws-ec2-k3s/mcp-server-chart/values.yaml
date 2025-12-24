@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: seohuipark/crawler-mind-mcp-server
-  tag: dev
+  tag: dev-20251201-113518
   pullPolicy: Always
 
 resources:
@@ -16,4 +16,3 @@ resources:
 service:
   type: ClusterIP
   port: 4200
-

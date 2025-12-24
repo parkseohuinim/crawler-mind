@@ -21,7 +21,7 @@ resources:
 persistence:
   enabled: true
   size: 10Gi
-  storageClassName: standard
+  storageClassName: local-path
   # PVC를 수동으로 관리하려면 existingClaim을 사용
   existingClaim: ""  # 기존 PVC 이름을 지정하면 새로 생성하지 않음
 
@@ -36,14 +36,4 @@ env:
 fullnameOverride: opensearch
 
 ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    kubernetes.io/ingress.class: nginx
-  hosts:
-    - host: opensearch.alvinpark.xyz
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
+  enabled: false

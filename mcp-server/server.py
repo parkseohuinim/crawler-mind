@@ -1292,6 +1292,7 @@ async def ari_process_html_files_complete(files: List[Dict[str, str]]) -> Dict[s
 
 async def main():
     # Start MCP server
+    logger.info("🚀 Starting MCP Server on 0.0.0.0:4200")
     await mcp.run_async(
         transport="http",
         host="0.0.0.0",
