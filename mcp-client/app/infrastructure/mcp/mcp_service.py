@@ -107,7 +107,8 @@ class MCPService:
             # 사용 통계 업데이트
             self._tool_usage_stats[tool_name] = self._tool_usage_stats.get(tool_name, 0) + 1
             
-            logger.info(f"✅ Tool '{tool_name}' executed successfully. Result: {result}")
+            logger.info(f"✅ Tool '{tool_name}' executed successfully")
+            logger.debug(f"📄 Full result: {result}")  # 디버그 레벨로 변경
             logger.info(f"📊 Tool usage count for '{tool_name}': {self._tool_usage_stats[tool_name]}")
             return result
             

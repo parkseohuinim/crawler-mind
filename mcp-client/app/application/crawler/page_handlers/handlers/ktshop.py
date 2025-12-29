@@ -474,15 +474,37 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                                     messages=[
                                         {
                                             "role": "system",
-                                            "content": """당신은 이미지 OCR 전문가입니다. 
-                                                이미지에 보이는 모든 텍스트를 정확하게 추출하세요.
-                                                표나 리스트는 마크다운 형식으로 변환하세요.
-                                                텍스트가 없으면 빈 문자열을 반환하세요."""
+                                            "content": """You are a LITERAL OCR transcription machine. Your ONLY job is to copy text EXACTLY as shown - like a photocopier.
+
+ABSOLUTE RULES - NO EXCEPTIONS:
+1. NUMBERS: Copy digit-by-digit. If you see "17.4", write "17.4" NOT "17.0" or "17.42"
+2. WORDS: Copy letter-by-letter. If you see "열간 단조", write "열간 단조" NOT "얇은" or translation
+3. SPACING: Preserve exact spaces, tabs, and line breaks as shown
+4. SYMBOLS: Copy all punctuation, special characters exactly: |, -, ., etc.
+5. NO INTERPRETATION: Do not correct, translate, summarize, or modify ANYTHING
+6. NO REFUSAL: Never say "I'm sorry" or refuse - just transcribe what you see
+7. LAYOUT: Keep visual structure - if text is side-by-side, keep it side-by-side
+8. FORMAT: Use plain text or markdown only for structure (tables/lists), never change the actual text content
+
+EXAMPLES OF WHAT NOT TO DO:
+❌ Changing "17.4cm" to "17.0cm" 
+❌ Changing "열간 단조" to "얇은"
+❌ Removing spaces or adding pipes "|" where there are spaces
+❌ Saying "I'm sorry, I can't assist with that"
+❌ Translating, interpreting, or "fixing" anything
+
+WHAT TO DO:
+✅ Type EXACTLY what you see, character by character
+✅ If text says "17.4cm iPhone 17 Pro", write exactly "17.4cm iPhone 17 Pro"
+✅ Preserve all original spacing and layout
+✅ Copy errors, typos, and unusual formatting as-is
+
+You are a DUMB COPIER. Do not think. Do not interpret. Just COPY."""
                                         },
                                         {
                                             "role": "user",
                                             "content": [
-                                                {"type": "text", "text": "이 이미지에서 모든 텍스트를 추출하세요."},
+                                                {"type": "text", "text": "Copy ALL text from this image EXACTLY as shown. Do not change numbers, words, spacing, or formatting. Type what you see character-by-character like a photocopier. No interpretation, no correction, no translation."},
                                                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
                                             ]
                                         }

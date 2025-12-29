@@ -39,6 +39,19 @@ class CrawlerProxy:
     실제로는 MCP 서버의 crawl4ai_scrape를 호출합니다.
     """
 
+    def _normalize_result(self, result: Any) -> Dict[str, Any]:
+        """
+        MCP CallToolResult를 Dict로 변환
+        """
+        if hasattr(result, "structured_content"):
+            return result.structured_content
+        if hasattr(result, "data"):
+            return result.data
+        if isinstance(result, dict):
+            return result
+        logger.warning(f"Unexpected MCP tool result type: {type(result)}")
+        return {"success": False, "error": "Unknown result format"}
+
     async def arun(self, url: str, config: Any = None) -> CrawlResult:
         """
         crawl4ai 스타일의 arun 메서드 에뮬레이션
@@ -49,7 +62,8 @@ class CrawlerProxy:
             crawl4ai 결과와 유사한 객체
         """
         logger.debug(f"CrawlerProxy.arun called for: {url}")
-        result = await mcp_service.call_tool("crawl4ai_scrape", {"url": url})
+        raw_result = await mcp_service.call_tool("crawl4ai_scrape", {"url": url})
+        result = self._normalize_result(raw_result)
 
         return CrawlResult(
             success=result.get("success", False),
@@ -75,6 +89,19 @@ class PageHandlerClient:
         """crawl4ai crawler 직접 접근용 프록시"""
         return self._crawler_proxy
 
+    def _normalize_result(self, result: Any) -> Dict[str, Any]:
+        """
+        MCP CallToolResult를 Dict로 변환
+        """
+        if hasattr(result, "structured_content"):
+            return result.structured_content
+        if hasattr(result, "data"):
+            return result.data
+        if isinstance(result, dict):
+            return result
+        logger.warning(f"Unexpected MCP tool result type: {type(result)}")
+        return {"success": False, "error": "Unknown result format"}
+
     async def scrape(self, url: str) -> Dict[str, Any]:
         """
         단일 URL 비동기 스크래핑 (Dict 반환)
@@ -85,7 +112,8 @@ class PageHandlerClient:
         """
         logger.debug(f"PageHandlerClient.scrape called for: {url}")
         try:
-            result = await mcp_service.call_tool("crawl4ai_scrape", {"url": url})
+            raw_result = await mcp_service.call_tool("crawl4ai_scrape", {"url": url})
+            result = self._normalize_result(raw_result)
             return {
                 "success": result.get("success", False),
                 "markdown": result.get("markdown", ""),
