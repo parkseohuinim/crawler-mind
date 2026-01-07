@@ -14,7 +14,7 @@ class DailyCrawlRequest(BaseModel):
         description="최대 크롤링 URL 수 (None이면 전체, url_ids가 있으면 무시됨)"
     )
     url_ids: Optional[List[int]] = Field(
-        default=None,
+        default=[],
         description="테스트용: 특정 input_urls ID 목록 (지정 시 해당 ID만 크롤링)"
     )
     mode: Literal["sequential", "parallel"] = Field(
@@ -22,10 +22,10 @@ class DailyCrawlRequest(BaseModel):
         description="실행 모드 (sequential: 순차, parallel: 병렬)"
     )
     concurrency: int = Field(
-        default=20,
+        default=3,
         ge=1,
         le=50,
-        description="병렬 실행 시 동시 처리 수 (1~50, 기본값: 20)"
+        description="병렬 실행 시 동시 처리 수 (1~50, 기본값: 3)"
     )
     update_menu_links: bool = Field(
         default=True,

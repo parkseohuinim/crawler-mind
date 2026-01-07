@@ -88,7 +88,7 @@ class DailyCrawlingService:
         limit: Optional[int] = None,
         url_ids: Optional[List[int]] = None,
         mode: str = "sequential",
-        concurrency: int = 5,
+        concurrency: int = 3,
         update_menu_links: bool = True
     ) -> str:
         """
@@ -99,7 +99,7 @@ class DailyCrawlingService:
             limit: 최대 URL 수 (url_ids가 있으면 무시)
             url_ids: 특정 input_urls ID 목록 (테스트용)
             mode: 실행 모드 ("sequential" 또는 "parallel")
-            concurrency: 병렬 실행 시 동시 처리 수 (1~50)
+            concurrency: 병렬 실행 시 동시 처리 수 (1~50, 기본값: 3)
             update_menu_links: menu_links DB 업데이트 여부 (기본값 True)
             
         Returns:

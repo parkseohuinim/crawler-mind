@@ -670,7 +670,7 @@ async def create_daily_crawl_task(request: DailyCrawlRequest = None):
         limit: 최대 크롤링 URL 수 (기본: None = 전체, url_ids 지정 시 무시)
         url_ids: 테스트용 - 특정 input_urls ID 목록 (지정 시 해당 ID만 크롤링)
         mode: 실행 모드 - "sequential"(순차) 또는 "parallel"(병렬) (기본: parallel)
-        concurrency: 병렬 실행 시 동시 처리 수 (1~50, 기본: 20)
+        concurrency: 병렬 실행 시 동시 처리 수 (1~50, 기본: 3)
         update_menu_links: menu_links DB 업데이트 여부 (기본: True)
     """
     try:
@@ -680,9 +680,9 @@ async def create_daily_crawl_task(request: DailyCrawlRequest = None):
         # 기본값 처리 (Daily Crawling은 매일 전체 병렬 크롤링)
         force_recrawl = request.force_recrawl if request else True
         limit = request.limit if request else None
-        url_ids = request.url_ids if request else None
+        url_ids = request.url_ids if request else []
         mode = request.mode if request else "parallel"
-        concurrency = request.concurrency if request else 20
+        concurrency = request.concurrency if request else 3
         update_menu_links = request.update_menu_links if request else True
         
         # 크롤링 대상 URL 수 확인
