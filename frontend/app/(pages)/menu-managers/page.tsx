@@ -159,7 +159,6 @@ export default function MenuManagersPage() {
       {/* Menu Manager Info Table */}
       <MenuManagerInfoTable 
         menuManagerInfos={menuManagerInfos}
-        menuLinks={allMenuLinks || []}
         loading={loading}
         onEdit={handleEdit}
         onDelete={handleDelete}

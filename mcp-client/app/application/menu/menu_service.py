@@ -195,7 +195,15 @@ class MenuApplicationService:
         """Get manager info list with pagination"""
         manager_infos, total = await self.repository.get_manager_info_list(skip, limit, search)
         
-        items = [MenuManagerInfoResponse.model_validate(info) for info in manager_infos]
+        # menu_path를 포함하여 응답 생성
+        items = []
+        for info in manager_infos:
+            response = MenuManagerInfoResponse.model_validate(info)
+            # menu_link relationship에서 menu_path 가져오기
+            if info.menu_link:
+                response.menu_path = info.menu_link.menu_path
+            items.append(response)
+        
         pages = (total + limit - 1) // limit if limit > 0 else 1
         
         return MenuManagerInfoListResponse(

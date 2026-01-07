@@ -7,7 +7,7 @@ import ModernTable from '@/app/_components/ui/ModernTable';
 
 interface MenuManagerInfoTableProps {
   menuManagerInfos: MenuManagerInfo[];
-  menuLinks: MenuLink[];
+  menuLinks?: MenuLink[]; // 더 이상 필수가 아님 (menu_path가 응답에 포함됨)
   loading: boolean;
   onEdit: (menuManagerInfo: MenuManagerInfo) => void;
   onDelete: (menuManagerInfo: MenuManagerInfo) => void;
@@ -24,8 +24,13 @@ export default function MenuManagerInfoTable({
   const safeMenuManagerInfos = Array.isArray(menuManagerInfos) ? menuManagerInfos : [];
   const safeMenuLinks = Array.isArray(menuLinks) ? menuLinks : [];
 
-  const getMenuPath = (menuId: number) => {
-    const menu = safeMenuLinks.find(m => m.id === menuId);
+  const getMenuPath = (menuManagerInfo: MenuManagerInfo) => {
+    // 1. 먼저 응답에 포함된 menu_path 사용 (백엔드에서 직접 제공)
+    if (menuManagerInfo.menu_path) {
+      return menuManagerInfo.menu_path.split('^').join(' > ');
+    }
+    // 2. 폴백: menuLinks 배열에서 찾기 (이전 호환성 유지)
+    const menu = safeMenuLinks.find(m => m.id === menuManagerInfo.menu_id);
     return menu ? menu.menu_path.split('^').join(' > ') : '알 수 없음';
   };
 
@@ -37,10 +42,10 @@ export default function MenuManagerInfoTable({
       render: (value: number) => value
     },
     {
-      key: 'menu_id',
+      key: 'menu_path',
       label: '메뉴 경로',
       className: 'menu-path-cell',
-      render: (value: number) => getMenuPath(value)
+      render: (_value: string | undefined, row: MenuManagerInfo) => getMenuPath(row)
     },
     {
       key: 'team_name',

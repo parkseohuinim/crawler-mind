@@ -211,7 +211,7 @@ class MenuRepository(IMenuRepository):
     
     async def get_manager_info_list(self, skip: int = 0, limit: int = 100, search: str = None) -> Tuple[List[MenuManagerInfo], int]:
         """Get manager info list with pagination and search by menu path"""
-        query = select(MenuManagerInfo).join(MenuLink, MenuManagerInfo.menu_id == MenuLink.id)
+        query = select(MenuManagerInfo).join(MenuLink, MenuManagerInfo.menu_id == MenuLink.id).options(selectinload(MenuManagerInfo.menu_link))
         count_query = select(func.count(MenuManagerInfo.id)).join(MenuLink, MenuManagerInfo.menu_id == MenuLink.id)
         
         if search:

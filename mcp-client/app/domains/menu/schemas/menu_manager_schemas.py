@@ -22,6 +22,7 @@ class MenuManagerInfoUpdate(BaseModel):
 class MenuManagerInfoResponse(MenuManagerInfoBase):
     """Menu manager info response schema"""
     id: int = Field(..., description="Menu manager info ID")
+    menu_path: Optional[str] = Field(None, description="Menu path from related MenuLink")
     created_by: Optional[str] = Field(None, description="Creator username")
     created_at: Optional[datetime] = Field(None, description="Creation timestamp")
     updated_by: Optional[str] = Field(None, description="Updater username")
