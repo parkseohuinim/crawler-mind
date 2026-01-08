@@ -52,6 +52,8 @@
 @import './_styles/components/rag/modern-rag.css';
 
 @import './_styles/components/json-compare/modern-json-compare.css';
+@import './_styles/components/toast.css';
+@import './_styles/components/daily-crawling.css';
 
 /* Global Layout Styles - Full Document Coverage */
 html {

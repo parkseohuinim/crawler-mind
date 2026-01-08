@@ -9,6 +9,7 @@
   position: relative;
   overflow: hidden;
   z-index: 1;
+  margin: 24px 15vw;
 }
 
 .modern-page-header::before {
@@ -166,6 +167,7 @@
 @media (max-width: 1024px) {
   .modern-page-header {
     padding: 28px 24px;
+    margin: 20px 10vw;
   }
   
   .modern-page-header-content {
@@ -188,6 +190,7 @@
   .modern-page-header {
     padding: 24px 20px;
     border-radius: 16px;
+    margin: 16px 8vw;
   }
   
   .modern-page-header-left {
@@ -230,6 +233,7 @@
 @media (max-width: 480px) {
   .modern-page-header {
     padding: 20px 16px;
+    margin: 12px 5vw;
   }
   
   .modern-page-title {

@@ -52,6 +52,12 @@ export default function Navigation() {
           >
             JSON 비교
           </Link>
+          <Link 
+            href="/daily-crawling" 
+            className={`nav-link ${pathname === '/daily-crawling' ? 'active' : ''}`}
+          >
+            Daily 추출
+          </Link>
         </div>
       </div>
     </nav>

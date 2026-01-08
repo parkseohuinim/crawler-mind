@@ -27,7 +27,7 @@ from app.application.crawler.preprocess import preprocess_content
 from app.domains.crawler.entities.input_url import InputUrl
 from app.domains.crawler.repositories.input_url_repository import input_url_repository
 from app.domains.menu.entities.menu_link import MenuLink
-from app.models import TaskResult, TaskStatus
+from app.models import TaskResult, TaskStatus, CrawlingResult, FailedItem
 from app.shared.database.base import get_database_session
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ class DailyCrawlingService:
         self.tasks: Dict[str, TaskResult] = {}
         self.task_streams: Dict[str, asyncio.Queue] = {}
         self._collected_results: Dict[str, List[Dict[str, Any]]] = {}  # task별 결과 수집
+        self._failed_items: Dict[str, List[FailedItem]] = {}  # task별 실패 내역 수집
     
     # ----------------------------------------------------------------------------------
     # Public APIs
@@ -114,9 +115,10 @@ class DailyCrawlingService:
         self.tasks[task_id] = task_result
         self.task_streams[task_id] = asyncio.Queue()
         self._collected_results[task_id] = []
+        self._failed_items[task_id] = []
         
         # concurrency 범위 제한
-        concurrency = max(1, min(50, concurrency))
+        concurrency = max(1, min(10, concurrency))
         
         if url_ids:
             logger.info(f"✅ Task created: {task_id} (url_ids={url_ids}, mode={mode})")
@@ -130,14 +132,30 @@ class DailyCrawlingService:
         """태스크 조회"""
         return self.tasks.get(task_id)
     
+    def get_tasks(self, limit: int = 10) -> List[TaskResult]:
+        """최근 태스크 목록 조회"""
+        # 생성 시간 역순으로 정렬하여 반환
+        sorted_tasks = sorted(
+            self.tasks.values(), 
+            key=lambda x: x.createdAt, 
+            reverse=True
+        )
+        return sorted_tasks[:limit]
+    
     async def get_task_stream(self, task_id: str) -> AsyncGenerator[str, None]:
         """SSE 스트림 생성"""
         logger.info(f"🔍 SSE stream requested: {task_id}")
         
         if task_id not in self.task_streams:
-            logger.error(f"❌ Stream not found: {task_id}")
-            yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Task not found'}})}\n\n"
-            return
+            # 태스크가 아직 실행 중이라면 큐를 다시 생성 (복구/재연결 대응)
+            task = self.tasks.get(task_id)
+            if task and task.status in {TaskStatus.PENDING, TaskStatus.RUNNING}:
+                logger.info(f"🔄 Re-creating stream queue for active task: {task_id}")
+                self.task_streams[task_id] = asyncio.Queue()
+            else:
+                logger.error(f"❌ Stream not found: {task_id}")
+                yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Task not found or already finished'}})}\n\n"
+                return
         
         yield f"data: {json.dumps({'type': 'connected', 'data': {'message': 'Daily Crawling Stream connected'}})}\n\n"
         
@@ -151,7 +169,8 @@ class DailyCrawlingService:
                     try:
                         payload = json.loads(message)
                         if payload.get("type") in {"final", "complete", "error"}:
-                            await asyncio.sleep(0.5)
+                            # 클라이언트가 메시지를 받을 수 있도록 충분히 대기
+                            await asyncio.sleep(2.0)
                             break
                     except json.JSONDecodeError:
                         pass
@@ -168,11 +187,17 @@ class DailyCrawlingService:
                         
         except Exception as exc:
             logger.error(f"❌ Stream error {task_id}: {exc}")
-            await self._send_update(task_id, "error", {"message": str(exc)})
+            # 이미 닫힌 스트림에 에러를 보낼 수 없으므로 로그만 남김
         finally:
-
-            logger.info(f"Cleaning up stream: {task_id}")
-            self.task_streams.pop(task_id, None)
+            logger.info(f"SSE connection closed: {task_id}")
+            # 이 연결이 종료되었다고 해서 다른 클라이언트를 위한 큐를 삭제하지 않음
+            # 큐 삭제는 태스크가 완료된 후 _process_daily_task의 마지막이나 별도 관리 루틴에서 수행하는 것이 안전함
+            
+            task = self.tasks.get(task_id)
+            if task and task.status in {TaskStatus.COMPLETED, TaskStatus.FAILED}:
+                # 태스크가 이미 종료된 상태에서 연결이 끊긴 경우에만 정리 고려
+                # 단, 여러 클라이언트가 있을 수 있으므로 신중해야 함
+                pass
     
     # ----------------------------------------------------------------------------------
     # Core Workflow
@@ -256,21 +281,36 @@ class DailyCrawlingService:
             self.tasks[task_id].status = TaskStatus.COMPLETED
             self.tasks[task_id].completedAt = datetime.now().isoformat()
             
+            # 결과 저장 (API 조회용)
+            self.tasks[task_id].result = CrawlingResult(
+                json_file=str(json_file_path) if json_file_path else None,
+                success=success_count,
+                failed=failed_count,
+                total=len(urls),
+                failed_items=self._failed_items.get(task_id, [])
+            )
+            
             summary = {
                 "total": len(urls),
                 "success": success_count,
                 "failed": failed_count,
                 "json_file": str(json_file_path) if json_file_path else None,
-                "message": f"Daily Crawling 완료: {success_count}/{len(crawl_results)} 성공"
+                "message": f"Daily Crawling 완료: {success_count}/{len(crawl_results)} 성공",
+                "failed_items": [item.model_dump() for item in self._failed_items.get(task_id, [])]
             }
             
             await self._send_update(task_id, "final", summary)
             await self._send_update(task_id, "complete", summary)
             
+            # 클라이언트가 완료 메시지를 받을 수 있도록 잠시 대기
+            await asyncio.sleep(1.0)
+            
             logger.info(f"✅ Crawling done: {success_count}/{len(urls)} success, {failed_count} failed")
             
-            # 정리
+            # 정리 (충분한 대기 후 스트림 큐 삭제)
             self._collected_results.pop(task_id, None)
+            self._failed_items.pop(task_id, None)
+            asyncio.create_task(self._delayed_cleanup(task_id))
             
         except Exception as exc:
             logger.error(f"❌ Task {task_id} failed: {exc}")
@@ -278,7 +318,17 @@ class DailyCrawlingService:
             self.tasks[task_id].error = str(exc)
             self.tasks[task_id].completedAt = datetime.now().isoformat()
             await self._send_update(task_id, "error", {"message": str(exc)})
+            # 클라이언트가 에러 메시지를 받을 수 있도록 잠시 대기
+            await asyncio.sleep(1.0)
             self._collected_results.pop(task_id, None)
+            self._failed_items.pop(task_id, None)
+            asyncio.create_task(self._delayed_cleanup(task_id))
+
+    async def _delayed_cleanup(self, task_id: str, delay: float = 300.0) -> None:
+        """태스크 완료 후 지연된 정리 (스트림 큐 삭제 등)"""
+        await asyncio.sleep(delay)
+        logger.info(f"🧹 Delayed cleanup for task: {task_id}")
+        self.task_streams.pop(task_id, None)
     
     async def _process_sequential(
         self,
@@ -287,12 +337,16 @@ class DailyCrawlingService:
     ) -> List[Dict[str, Any]]:
         """순차 크롤링 처리 (결과만 수집, DB 업데이트 없음)"""
         results = []
+        success_count = 0
+        failed_count = 0
         
         for idx, input_url in enumerate(urls, start=1):
             try:
                 await self._send_update(task_id, "progress", {
                     "current": idx,
                     "total": len(urls),
+                    "success": success_count,
+                    "failed": failed_count,
                     "url": input_url.pc_url,
                     "message": f"크롤링 중: {idx}/{len(urls)}"
                 })
@@ -301,6 +355,7 @@ class DailyCrawlingService:
                 crawl_result = await self._crawl_single_url(input_url)
                 
                 if crawl_result.get("success"):
+                    success_count += 1
                     # 전처리 실행
                     processed_result = self._preprocess_result(crawl_result, input_url)
                     results.append({
@@ -310,14 +365,26 @@ class DailyCrawlingService:
                     })
                     logger.info(f"✅ [{idx}/{len(urls)}] Success: {input_url.pc_url}")
                 else:
+                    failed_count += 1
                     results.append({
                         "success": False,
                         "input_url": input_url,
                         "error": crawl_result.get("error"),
                     })
                     logger.warning(f"❌ [{idx}/{len(urls)}] Failed: {input_url.pc_url}")
+                
+                # 개별 작업 후 진행 상황 업데이트 (count 반영)
+                await self._send_update(task_id, "progress", {
+                    "current": idx,
+                    "total": len(urls),
+                    "success": success_count,
+                    "failed": failed_count,
+                    "url": input_url.pc_url,
+                    "message": f"크롤링 완료: {idx}/{len(urls)}"
+                })
                     
             except Exception as exc:
+                failed_count += 1
                 logger.error(f"❌ [{idx}/{len(urls)}] Error: {input_url.pc_url} - {exc}")
                 results.append({
                     "success": False,
@@ -337,11 +404,13 @@ class DailyCrawlingService:
         semaphore = asyncio.Semaphore(concurrency)
         results: List[Dict[str, Any]] = []
         processed_count = 0
+        success_count = 0
+        failed_count = 0
         total = len(urls)
         lock = asyncio.Lock()
         
         async def crawl_with_semaphore(idx: int, input_url: InputUrl) -> Dict[str, Any]:
-            nonlocal processed_count
+            nonlocal processed_count, success_count, failed_count
             
             async with semaphore:
                 try:
@@ -351,8 +420,18 @@ class DailyCrawlingService:
                     async with lock:
                         processed_count += 1
                         current = processed_count
+                        
+                        if crawl_result.get("success"):
+                            success_count += 1
+                            is_success = True
+                        else:
+                            failed_count += 1
+                            is_success = False
+                        
+                        curr_success = success_count
+                        curr_failed = failed_count
                     
-                    if crawl_result.get("success"):
+                    if is_success:
                         # 전처리 실행
                         processed_result = self._preprocess_result(crawl_result, input_url)
                         result = {
@@ -373,6 +452,8 @@ class DailyCrawlingService:
                     await self._send_update(task_id, "progress", {
                         "current": current,
                         "total": total,
+                        "success": curr_success,
+                        "failed": curr_failed,
                         "url": input_url.pc_url,
                         "message": f"크롤링 완료: {current}/{total} (병렬 처리 중)"
                     })
@@ -383,12 +464,17 @@ class DailyCrawlingService:
                     async with lock:
                         processed_count += 1
                         current = processed_count
+                        failed_count += 1
+                        curr_success = success_count
+                        curr_failed = failed_count
                     
                     logger.error(f"❌ [{current}/{total}] Error: {input_url.pc_url} - {exc}")
                     
                     await self._send_update(task_id, "progress", {
                         "current": current,
                         "total": total,
+                        "success": curr_success,
+                        "failed": curr_failed,
                         "url": input_url.pc_url,
                         "message": f"크롤링 완료: {current}/{total} (병렬 처리 중)"
                     })
@@ -910,23 +996,41 @@ class DailyCrawlingService:
                         success_count += 1
                 else:
                     # 실패한 경우
+                    error_msg = result.get("error") or "알 수 없는 오류"
                     await input_url_repository.update_crawl_status(
-                        input_url.id, "failed", result.get("error")
+                        input_url.id, "failed", error_msg
                     )
                     failed_count += 1
                     
+                    # 실패 내역 저장
+                    self._failed_items[task_id].append(FailedItem(
+                        id=input_url.id,
+                        url=input_url.pc_url,
+                        error=error_msg
+                    ))
+                    
             except Exception as exc:
-                logger.error(f"❌ DB update error [{idx}/{total}]: {input_url.pc_url} - {exc}")
+                error_msg = str(exc)
+                logger.error(f"❌ DB update error [{idx}/{total}]: {input_url.pc_url} - {error_msg}")
                 await input_url_repository.update_crawl_status(
-                    input_url.id, "failed", str(exc)
+                    input_url.id, "failed", error_msg
                 )
                 failed_count += 1
+                
+                # 실패 내역 저장
+                self._failed_items[task_id].append(FailedItem(
+                    id=input_url.id,
+                    url=input_url.pc_url,
+                    error=error_msg
+                ))
             
             # 진행 상황 (10개마다 또는 마지막)
             if idx % 10 == 0 or idx == total:
                 await self._send_update(task_id, "progress", {
                     "current": idx,
                     "total": total,
+                    "success": success_count,
+                    "failed": failed_count,
                     "message": f"DB 업데이트 중: {idx}/{total}"
                 })
         

@@ -670,7 +670,7 @@ async def create_daily_crawl_task(request: DailyCrawlRequest = None):
         limit: 최대 크롤링 URL 수 (기본: None = 전체, url_ids 지정 시 무시)
         url_ids: 테스트용 - 특정 input_urls ID 목록 (지정 시 해당 ID만 크롤링)
         mode: 실행 모드 - "sequential"(순차) 또는 "parallel"(병렬) (기본: parallel)
-        concurrency: 병렬 실행 시 동시 처리 수 (1~50, 기본: 3)
+        concurrency: 병렬 실행 시 동시 처리 수 (1~10, 기본: 3)
         update_menu_links: menu_links DB 업데이트 여부 (기본: True)
     """
     try:
@@ -727,6 +727,69 @@ async def create_daily_crawl_task(request: DailyCrawlRequest = None):
         raise HTTPException(status_code=500, detail=f"Daily Crawling 작업 생성 실패: {str(e)}")
 
 
+# NOTE: Static paths (/stats, /download) must be defined BEFORE dynamic paths (/{task_id})
+@router.get("/daily-crawling/stats", response_model=DailyCrawlStats, tags=["daily-crawling"])
+async def get_daily_crawl_stats():
+    """Daily Crawling 통계 조회"""
+    try:
+        stats = await input_url_repository.get_stats()
+        return DailyCrawlStats(**stats)
+    except Exception as e:
+        logger.error(f"Daily Crawling stats failed: {e}")
+        raise HTTPException(status_code=500, detail=f"통계 조회 실패: {str(e)}")
+
+
+@router.get("/daily-crawling/download", tags=["daily-crawling"])
+async def download_daily_crawl_result(file: str = Query(..., description="JSON 파일 경로")):
+    """Daily Crawling 결과 JSON 파일 다운로드"""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    
+    try:
+        # 보안: 경로 검증 (result 디렉토리 내 파일만 허용)
+        result_dir = Path(__file__).parent.parent / "application" / "crawler" / "result"
+        file_path = Path(file)
+        
+        # 절대 경로인 경우 파일명만 추출
+        if file_path.is_absolute():
+            file_path = result_dir / file_path.name
+        else:
+            file_path = result_dir / file_path
+        
+        # 경로 정규화 및 검증
+        file_path = file_path.resolve()
+        result_dir = result_dir.resolve()
+        
+        if not str(file_path).startswith(str(result_dir)):
+            raise HTTPException(status_code=403, detail="접근이 거부되었습니다")
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
+        
+        return FileResponse(
+            path=file_path,
+            filename=file_path.name,
+            media_type="application/json"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Daily Crawling download failed: {e}")
+        raise HTTPException(status_code=500, detail=f"파일 다운로드 실패: {str(e)}")
+
+
+@router.get("/daily-crawling/tasks", response_model=List[TaskResult], tags=["daily-crawling"])
+async def get_daily_crawl_tasks(limit: int = Query(10, ge=1, le=100)):
+    """Daily Crawling 최근 태스크 목록 조회"""
+    try:
+        return daily_crawling_service.get_tasks(limit=limit)
+    except Exception as e:
+        logger.error(f"Daily Crawling tasks retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=f"태스크 목록 조회 실패: {str(e)}")
+
+
+# Dynamic paths (/{task_id}) must come AFTER static paths
 @router.get("/daily-crawling/{task_id}", response_model=TaskResult, tags=["daily-crawling"])
 async def get_daily_crawl_task(task_id: str = Path(..., description="Task ID")):
     """Daily Crawling 태스크 상태 조회"""
@@ -770,14 +833,3 @@ async def stream_daily_crawl_task(task_id: str = Path(..., description="Task ID"
     except Exception as e:
         logger.error(f"Daily Crawling SSE stream failed: {e}")
         raise HTTPException(status_code=500, detail=f"Daily Crawling 스트림 생성 실패: {str(e)}")
-
-
-@router.get("/daily-crawling/stats", response_model=DailyCrawlStats, tags=["daily-crawling"])
-async def get_daily_crawl_stats():
-    """Daily Crawling 통계 조회"""
-    try:
-        stats = await input_url_repository.get_stats()
-        return DailyCrawlStats(**stats)
-    except Exception as e:
-        logger.error(f"Daily Crawling stats failed: {e}")
-        raise HTTPException(status_code=500, detail=f"통계 조회 실패: {str(e)}")

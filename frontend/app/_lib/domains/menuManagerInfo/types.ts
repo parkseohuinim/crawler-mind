@@ -5,6 +5,7 @@
 export interface MenuManagerInfo {
   id: number;
   menu_id: number;
+  menu_path?: string; // 연관된 MenuLink의 메뉴 경로
   team_name: string;
   manager_names: string; // 여러 담당자명을 슬래시(/)로 구분하여 저장
   created_by?: string;
