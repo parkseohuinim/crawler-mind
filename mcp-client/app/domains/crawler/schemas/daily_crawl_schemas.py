@@ -24,8 +24,8 @@ class DailyCrawlRequest(BaseModel):
     concurrency: int = Field(
         default=3,
         ge=1,
-        le=50,
-        description="병렬 실행 시 동시 처리 수 (1~50, 기본값: 3)"
+        le=10,
+        description="병렬 실행 시 동시 처리 수 (1~10, 기본값: 3)"
     )
     update_menu_links: bool = Field(
         default=True,

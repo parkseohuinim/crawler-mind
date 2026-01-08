@@ -47,9 +47,20 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+class FailedItem(BaseModel):
+    """Failed crawling item detail"""
+    id: Optional[int] = None
+    url: str
+    error: str
+
 class CrawlingResult(BaseModel):
     """Crawling result model"""
     json_data: Optional[List[Dict[str, Any]]] = Field(None, description="RAG JSON formatted data")
+    json_file: Optional[str] = Field(None, description="Path to saved JSON file")
+    success: Optional[int] = Field(None, description="Number of successful items")
+    failed: Optional[int] = Field(None, description="Number of failed items")
+    total: Optional[int] = Field(None, description="Total number of items")
+    failed_items: Optional[List[FailedItem]] = Field(None, description="List of failed item details")
 
 class TaskResult(BaseModel):
     """Task result model"""

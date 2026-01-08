@@ -429,7 +429,8 @@
 
 /* Menu Managers Page Styles */
 .menu-managers-page,
-.menu-tree-page {
+.menu-tree-page,
+.daily-crawling-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #fafafa 0%, #f8f9fa 50%, #e9ecef 100%);
   color: var(--color-text-primary);
@@ -439,7 +440,8 @@
 }
 
 .menu-managers-page::before,
-.menu-tree-page::before {
+.menu-tree-page::before,
+.daily-crawling-page::before {
   content: '';
   position: fixed;
   top: 0;

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Navigation from './_components/ui/Navigation';
+import Providers from './_components/providers/Providers';
 
 export const metadata: Metadata = {
   title: '크롤링 AI 어시스턴트',
@@ -15,8 +16,10 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body>
-        <Navigation />
-        {children}
+        <Providers>
+          <Navigation />
+          {children}
+        </Providers>
       </body>
     </html>
   );
