@@ -785,7 +785,9 @@ class DailyCrawlingService:
         
         # product.kt.com 변환
         if "product.kt.com" in pc_url:
-            return pc_url.replace("https://product.kt.com", "https://m.product.kt.com")
+            mobile_url = pc_url.replace("https://product.kt.com", "https://m.product.kt.com")
+            mobile_url = mobile_url.replace("/wDic/", "/mDic/")
+            return mobile_url
         
         # 기타 kt.com 도메인
         if "kt.com" in pc_url and "://m." not in pc_url:
