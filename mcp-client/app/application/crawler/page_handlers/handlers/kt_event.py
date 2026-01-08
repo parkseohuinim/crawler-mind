@@ -259,11 +259,20 @@ async def handle_kt_event_main(
         
         try:
             response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
-            await page.wait_for_timeout(3000)
             
             status_code = response.status if response else None
             if status_code and status_code >= 400:
                 logger.error(f"❌ KT Event main ({url}): HTTP {status_code} error")
+            
+            # 동적 로딩 대기: 이벤트 링크가 로드될 때까지 최대 15초 대기
+            try:
+                await page.wait_for_selector('a[data-pcevtno]', timeout=15000)
+                logger.info("✅ Event links loaded dynamically")
+            except Exception as e:
+                logger.warning(f"⚠️ Event links not found after 15s: {e}")
+            
+            # 추가 안정화 대기
+            await page.wait_for_timeout(2000)
             
             # 페이지네이션 정보 추출
             pagination_info = await page.evaluate("""() => {
