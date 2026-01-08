@@ -47,17 +47,22 @@ async def handle_kt_notice_detail(
                 
                 if attempt == 0:
                     response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-                    await page.wait_for_timeout(3000)
                 elif attempt == 1:
                     response = await page.goto(url, wait_until='load', timeout=40000)
-                    await page.wait_for_timeout(5000)
                 else:
                     response = await page.goto(url, wait_until='networkidle', timeout=50000)
-                    await page.wait_for_timeout(7000)
                 
                 status_code = response.status if response else None
                 if status_code and status_code >= 400:
                     logger.error(f"❌ HTTP {status_code}: {url}")
+                
+                # 동적 로딩 대기: 콘텐츠가 로드될 때까지 대기
+                try:
+                    await page.wait_for_selector('h1.title, .txt-content', timeout=10000)
+                    logger.info("✅ Notice content loaded")
+                except Exception as e:
+                    logger.warning(f"⚠️ Content not loaded (attempt {attempt+1}): {e}")
+                await page.wait_for_timeout(2000)
                 
                 metadata = await page.evaluate("""() => {
                     const title = document.querySelector('h1.title');

@@ -125,9 +125,16 @@ async def handle_gigagenie_faq_playwright(url: str, fclient: Any) -> Dict[str, A
         page = await browser.new_page()
         
         response = await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(8000)
         
         status_code = response.status if response else None
+        
+        # 동적 로딩 대기: FAQ 목록이 로드될 때까지 대기
+        try:
+            await page.wait_for_selector('.faq-list, .board-list, tbody tr', timeout=15000)
+            logger.info("✅ FAQ list loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ FAQ list not loaded: {e}")
+        await page.wait_for_timeout(2000)
         if status_code and status_code >= 400:
             logger.error(f"❌ Gigagenie FAQ ({url}): HTTP {status_code} error")
         
@@ -306,9 +313,16 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
         page = await browser.new_page()
 
         response = await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-        await page.wait_for_timeout(4000)
 
         status_code = response.status if response else None
+        
+        # 동적 로딩 대기: 뉴스 목록이 로드될 때까지 대기
+        try:
+            await page.wait_for_selector('.news-list, .board-list, tbody tr', timeout=15000)
+            logger.info("✅ News list loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ News list not loaded: {e}")
+        await page.wait_for_timeout(2000)
         if status_code:
             if status_code >= 400:
                 logger.error(f"❌ Gigagenie News List ({url}): HTTP {status_code} error")
@@ -364,9 +378,15 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
 
                 try:
                     detail_response = await detail_page.goto(detail_url, wait_until="domcontentloaded", timeout=40000)
-                    await detail_page.wait_for_timeout(3000)
 
                     detail_status = detail_response.status if detail_response else None
+                    
+                    # 상세 페이지 콘텐츠 대기
+                    try:
+                        await detail_page.wait_for_selector('.content, .detail-content', timeout=10000)
+                    except Exception:
+                        pass
+                    await detail_page.wait_for_timeout(2000)
                     if detail_status:
                         if detail_status >= 400:
                             logger.error(f"❌ Gigagenie News detail ({detail_url}): HTTP {detail_status} error")

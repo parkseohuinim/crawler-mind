@@ -44,7 +44,14 @@ async def handle_event_winner_announcements(
             
             # 페이지 로드
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
-            await page.wait_for_timeout(3000)  # 추가 로딩 대기
+            
+            # iframe 로딩 대기
+            try:
+                await page.wait_for_selector('iframe[src*="planDispEvent.do"]', timeout=15000)
+                logger.info("✅ Winner announcement iframe loaded")
+            except Exception as e:
+                logger.warning(f"⚠️ iframe not loaded: {e}")
+            await page.wait_for_timeout(2000)
             
             # iframe으로 이동
             iframe = await page.query_selector('iframe[src*="planDispEvent.do"]')

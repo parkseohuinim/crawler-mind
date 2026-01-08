@@ -145,6 +145,13 @@ async def handle_interpark_notice_main(url: str, fclient: Any, menu: Optional[st
         )
         page = await context.new_page()
         response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        
+        # 인터파크 티켓 목록 대기
+        try:
+            await page.wait_for_selector('table.board.dir-vertical, .ticket-list', timeout=15000)
+            logger.info("✅ Interpark ticket list loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ Ticket list not loaded: {e}")
         await page.wait_for_timeout(2000)
         
         status_code = response.status if response else None

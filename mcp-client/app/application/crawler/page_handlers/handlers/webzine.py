@@ -175,7 +175,12 @@ async def handle_webzine_list(
                 
                 try:
                     await page.goto(item['url'], wait_until='domcontentloaded', timeout=60000)
-                    await page.wait_for_timeout(1200)
+                    # 웹진 콘텐츠 대기
+                    try:
+                        await page.wait_for_selector('div.webzine_content, .content', timeout=10000)
+                    except Exception:
+                        pass
+                    await page.wait_for_timeout(1000)
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to navigate to detail page: {item['url']} - {e}")
                     continue

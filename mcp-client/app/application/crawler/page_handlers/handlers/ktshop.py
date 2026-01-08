@@ -42,11 +42,17 @@ async def handle_ktshop_popup_extractor(
 
         try:
             response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
-            await page.wait_for_timeout(2500)
-
+            
             status_code = response.status if response else None
             if status_code and status_code >= 400:
                 logger.error(f"❌ HTTP {status_code}: {url}")
+            
+            # 동적 로딩 대기: 페이지 콘텐츠가 로드될 때까지 대기
+            try:
+                await page.wait_for_load_state('networkidle', timeout=5000)
+            except Exception:
+                pass
+            await page.wait_for_timeout(2000)
 
             # 트리거 수집
             hash_triggers = await page.query_selector_all("*[onclick*='layerOpen(']")
@@ -413,7 +419,12 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                 if prod.get('url') and prod['url'] != url:
                     try:
                         await page.goto(prod['url'], wait_until='domcontentloaded', timeout=60000)
-                        await page.wait_for_timeout(1200)
+                        # 상세 페이지 콘텐츠 대기
+                        try:
+                            await page.wait_for_selector('.nwViewProdDetail, #cfmClContents', timeout=10000)
+                        except Exception:
+                            pass
+                        await page.wait_for_timeout(1000)
                     except Exception as _e:
                         logger.warning(f"⚠️ Navigation failed: {prod['url']}")
 
@@ -773,9 +784,16 @@ async def handle_goodbye_phoneview(url: str, fclient: Any, menu: Optional[str] =
         )
         page = await context.new_page()
         response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
-        await page.wait_for_timeout(600)
-
+        
         status_code = response.status if response else None
+        
+        # 동적 로딩 대기: 액세서리 목록이 로드될 때까지 대기
+        try:
+            await page.wait_for_selector('.plan-list-area .plan-list li, .accessory-item', timeout=10000)
+            logger.info("✅ Accessory list loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ Accessory list not loaded: {e}")
+        await page.wait_for_timeout(1000)
 
         # display:none/hidden 요소 강제 표시
         await page.evaluate("""
@@ -887,12 +905,16 @@ async def handle_store_plans_list(url: str, fclient: Any, menu: Optional[str] = 
         )
         page = await context.new_page()
         response = await page.goto(url, wait_until='domcontentloaded', timeout=90000)
-        await page.wait_for_timeout(800)
-
+        
         status_code = response.status if response else None
 
-        # iframe 탐색 - 충분한 대기 후 frames 직접 탐색
-        await page.wait_for_timeout(3000)  # iframe 로딩 대기
+        # iframe 탐색 - iframe이 로드될 때까지 대기
+        try:
+            await page.wait_for_selector('iframe', timeout=10000)
+            logger.info("✅ iframe loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ iframe not found: {e}")
+        await page.wait_for_timeout(3000)  # iframe 내용 로딩 대기
         
         target_frame = None
         

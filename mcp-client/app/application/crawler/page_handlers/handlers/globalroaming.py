@@ -251,6 +251,13 @@ async def handle_globalroaming_notice_main(
         )
         page = await context.new_page()
         response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        
+        # 공지사항 목록 대기
+        try:
+            await page.wait_for_selector('.board-content, table.board', timeout=15000)
+            logger.info("✅ Roaming notice list loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ Notice list not loaded: {e}")
         await page.wait_for_timeout(2000)
         
         status_code = response.status if response else None
