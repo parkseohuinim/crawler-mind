@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 
 export default function Navigation() {
   const pathname = usePathname();
+  // 환경 변수가 'false'로 명시되어 있지 않으면 로컬 환경에서는 기본적으로 보이게 설정
+  const isDailyEnabled = process.env.NEXT_PUBLIC_ENABLE_DAILY_CRAWLING !== 'false';
 
   return (
     <nav className="navigation">
@@ -52,12 +54,14 @@ export default function Navigation() {
           >
             JSON 비교
           </Link>
-          <Link 
-            href="/daily-crawling" 
-            className={`nav-link ${pathname === '/daily-crawling' ? 'active' : ''}`}
-          >
-            Daily 추출
-          </Link>
+          {isDailyEnabled && (
+            <Link 
+              href="/daily-crawling" 
+              className={`nav-link ${pathname === '/daily-crawling' ? 'active' : ''}`}
+            >
+              Daily 추출
+            </Link>
+          )}
         </div>
       </div>
     </nav>

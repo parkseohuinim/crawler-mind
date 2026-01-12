@@ -126,6 +126,9 @@ spec:
               value: {{ .Values.env.MAX_FILE_SIZE | quote }}
             - name: UPLOAD_TIMEOUT
               value: {{ .Values.env.UPLOAD_TIMEOUT | quote }}
+            
+            - name: ALLOW_DAILY_CRAWLING
+              value: {{ .Values.env.ALLOW_DAILY_CRAWLING | quote }}
 
           ports:
             - containerPort: {{ .Values.service.port }}

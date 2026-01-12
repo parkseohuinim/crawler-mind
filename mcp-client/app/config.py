@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     opensearch_host: str = "127.0.0.1"
     opensearch_port: int = 9200
     
+    # Feature Flags
+    allow_daily_crawling: bool = True
+    
     # Application Configuration
     app_title: str = "MCP FastAPI Server"
     app_version: str = "1.0.0"

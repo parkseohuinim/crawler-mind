@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: seohuipark/crawler-mind-frontend
-  tag: dev-20251201-113518
+  tag: dev-20260112-131832
   pullPolicy: Always
 
 env:
@@ -13,6 +13,8 @@ env:
   API_BASE_URL: "http://mcp-client:8000"
   # Next.js 텔레메트리 비활성화
   NEXT_TELEMETRY_DISABLED: "1"
+  # 데일리 크롤링 기능 활성화 여부 (운영 환경에서는 비활성)
+  NEXT_PUBLIC_ENABLE_DAILY_CRAWLING: "false"
   # Next.js 포트 및 호스트 설정
   PORT: "3000"
   HOSTNAME: "0.0.0.0"

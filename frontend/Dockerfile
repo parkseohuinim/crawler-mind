@@ -17,9 +17,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Accept public API base URL at build-time for client-side code
+# Accept public API base URL and feature flags at build-time for client-side code
 ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_ENABLE_DAILY_CRAWLING
+
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+ENV NEXT_PUBLIC_ENABLE_DAILY_CRAWLING=${NEXT_PUBLIC_ENABLE_DAILY_CRAWLING}
 
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry

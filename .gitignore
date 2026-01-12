@@ -158,6 +158,8 @@ local/
 .dockerignore
 Dockerfile.dev
 docker-compose.override.yml
+.buildcache/
+/tmp/build_*.log
 
 # Testing
 .pytest_cache/

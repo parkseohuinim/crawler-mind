@@ -1,22 +1,19 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
-// GET - Get Daily Crawling Stats
-export async function GET() {
+// GET - Get Recent Daily Crawling Tasks
+export async function GET(request: NextRequest) {
   try {
     // 기능이 비활성화된 경우 호출하지 않고 빈 결과 반환
     if (process.env.NEXT_PUBLIC_ENABLE_DAILY_CRAWLING === 'false') {
-      return NextResponse.json({
-        total: 0,
-        active: 0,
-        inactive: 0,
-        success_rate: 0,
-        last_crawl: null
-      });
+      return NextResponse.json([]);
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/daily-crawling/stats`, {
+    const { searchParams } = new URL(request.url);
+    const limit = searchParams.get('limit') || '10';
+    
+    const response = await fetch(`${BACKEND_URL}/api/daily-crawling/tasks?limit=${limit}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -27,7 +24,7 @@ export async function GET() {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       return NextResponse.json(
-        { error: errorData.detail || 'Failed to fetch stats' },
+        { error: errorData.detail || 'Failed to fetch tasks' },
         { status: response.status }
       );
     }
@@ -35,11 +32,10 @@ export async function GET() {
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Daily crawling stats API error:', error);
+    console.error('Daily crawling tasks API error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
-

@@ -64,6 +64,8 @@ spec:
               value: {{ .Values.env.API_BASE_URL | quote }}
             - name: NEXT_TELEMETRY_DISABLED
               value: {{ .Values.env.NEXT_TELEMETRY_DISABLED | quote }}
+            - name: NEXT_PUBLIC_ENABLE_DAILY_CRAWLING
+              value: {{ .Values.env.NEXT_PUBLIC_ENABLE_DAILY_CRAWLING | quote }}
             - name: PORT
               value: {{ .Values.env.PORT | quote }}
             - name: HOSTNAME

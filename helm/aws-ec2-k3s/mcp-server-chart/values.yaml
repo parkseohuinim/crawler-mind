@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: seohuipark/crawler-mind-mcp-server
-  tag: dev-20251201-113518
+  tag: dev-20260112-131832
   pullPolicy: Always
 
 resources:

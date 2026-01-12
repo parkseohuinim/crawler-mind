@@ -30,7 +30,7 @@ export async function GET(
     return NextResponse.json(data);
   } catch (error: unknown) {
     // 연결 실패 시 더 친절한 에러 메시지
-    if (error instanceof Error && error.cause && (error.cause as { code?: string }).code === 'ECONNREFUSED') {
+    if (error instanceof Error && (error as any).cause && ((error as any).cause as { code?: string }).code === 'ECONNREFUSED') {
       console.warn('Backend server is not running');
       return NextResponse.json(
         { error: '백엔드 서버가 실행되지 않았습니다. 서버를 시작해주세요.' },

@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: seohuipark/crawler-mind-mcp-client
-  tag: dev-20251201-113518
+  tag: dev-20260112-131832
   pullPolicy: Always
 
 env:
@@ -42,6 +42,9 @@ env:
   # 파일 업로드 관련 설정
   MAX_FILE_SIZE: "500MB"
   UPLOAD_TIMEOUT: "3600"
+  
+  # 데일리 크롤링 기능 활성화 여부
+  ALLOW_DAILY_CRAWLING: "false"
 
 # 추가적인 안정성 설정
 podSecurityContext:

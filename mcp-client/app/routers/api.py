@@ -22,6 +22,7 @@ from app.presentation.api.rag.rag_router import router as rag_router
 from app.presentation.api.json_compare.json_compare_router import router as json_compare_router
 from app.application.ari.ari_service import ari_service
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -661,19 +662,12 @@ from app.domains.crawler.repositories.input_url_repository import input_url_repo
 async def create_daily_crawl_task(request: DailyCrawlRequest = None):
     """
     Daily Crawling 태스크 생성
-    
-    input_urls 테이블에서 활성화된 URL을 조회하여 크롤링하고,
-    결과를 menu_links 테이블에 업데이트합니다.
-    
-    Args:
-        force_recrawl: 이미 성공한 URL도 재크롤링 여부 (기본: True)
-        limit: 최대 크롤링 URL 수 (기본: None = 전체, url_ids 지정 시 무시)
-        url_ids: 테스트용 - 특정 input_urls ID 목록 (지정 시 해당 ID만 크롤링)
-        mode: 실행 모드 - "sequential"(순차) 또는 "parallel"(병렬) (기본: parallel)
-        concurrency: 병렬 실행 시 동시 처리 수 (1~10, 기본: 3)
-        update_menu_links: menu_links DB 업데이트 여부 (기본: True)
     """
     try:
+        # 기능 활성화 여부 체크
+        if not settings.allow_daily_crawling:
+            raise HTTPException(status_code=403, detail="데일리 크롤링 기능은 이 환경에서 비활성화되어 있습니다.")
+            
         if not mcp_service.is_connected:
             raise HTTPException(status_code=503, detail="MCP 서버에 연결되지 않음")
         
@@ -732,6 +726,8 @@ async def create_daily_crawl_task(request: DailyCrawlRequest = None):
 async def get_daily_crawl_stats():
     """Daily Crawling 통계 조회"""
     try:
+        if not settings.allow_daily_crawling:
+            raise HTTPException(status_code=403, detail="비활성화된 기능입니다.")
         stats = await input_url_repository.get_stats()
         return DailyCrawlStats(**stats)
     except Exception as e:
@@ -746,6 +742,9 @@ async def download_daily_crawl_result(file: str = Query(..., description="JSON �
     from fastapi.responses import FileResponse
     
     try:
+        if not settings.allow_daily_crawling:
+            raise HTTPException(status_code=403, detail="비활성화된 기능입니다.")
+            
         # 보안: 경로 검증 (result 디렉토리 내 파일만 허용)
         result_dir = Path(__file__).parent.parent / "application" / "crawler" / "result"
         file_path = Path(file)
@@ -783,6 +782,8 @@ async def download_daily_crawl_result(file: str = Query(..., description="JSON �
 async def get_daily_crawl_tasks(limit: int = Query(10, ge=1, le=100)):
     """Daily Crawling 최근 태스크 목록 조회"""
     try:
+        if not settings.allow_daily_crawling:
+            raise HTTPException(status_code=403, detail="비활성화된 기능입니다.")
         return daily_crawling_service.get_tasks(limit=limit)
     except Exception as e:
         logger.error(f"Daily Crawling tasks retrieval failed: {e}")
