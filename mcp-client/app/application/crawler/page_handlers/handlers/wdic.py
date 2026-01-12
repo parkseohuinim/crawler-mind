@@ -65,6 +65,12 @@ async def handle_product_detail(
                 page = await browser.new_page()
                 
                 response = await page.goto(url, wait_until=wait_until, timeout=timeout)
+                
+                # 상품 상세 페이지 콘텐츠 대기
+                try:
+                    await page.wait_for_selector('.product-title, .prd-tit, .ui-view-info', timeout=10000)
+                except Exception:
+                    pass
                 await page.wait_for_timeout(extra_wait)
                 
                 status_code = response.status if response else None
@@ -560,6 +566,13 @@ async def handle_wdic_mobile_list(
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        
+        # 상품 목록 대기
+        try:
+            await page.wait_for_selector('.plan-list-area .plan-list li, ul.N-compare-suggest-list li', timeout=15000)
+            logger.info("✅ Product list loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ Product list not loaded: {e}")
         await page.wait_for_timeout(1200)
 
         status_code = response.status if response else None

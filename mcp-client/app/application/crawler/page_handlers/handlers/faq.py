@@ -78,7 +78,14 @@ async def handle_movie_customer_center_faq_playwright(
             page = await browser.new_page()
             
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
-            await page.wait_for_timeout(3000)
+            
+            # FAQ 콘텐츠 대기
+            try:
+                await page.wait_for_selector('.faq-list, .board-list, iframe', timeout=15000)
+                logger.info("✅ FAQ page loaded")
+            except Exception as e:
+                logger.warning(f"⚠️ FAQ page not loaded: {e}")
+            await page.wait_for_timeout(2000)
             
             iframe_element = await page.query_selector('#iFrmMileage')
             if iframe_element:
