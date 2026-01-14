@@ -406,7 +406,7 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
                     raw_date = (await date_element.inner_text()) if date_element else ""
                     date_text = raw_date.strip()
 
-                    startdate = "0000-00-00"
+                    startdate = "1900-01-01"
                     if date_text:
                         m = re.match(r"(\d{2})\.(\d{2})\.(\d{2})", date_text)
                         if m:

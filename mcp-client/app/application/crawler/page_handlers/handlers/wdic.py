@@ -587,27 +587,36 @@ async def handle_wdic_mobile_list(
         tabs = await page.evaluate("""
             () => {
                 const arr = [];
-                const selectors = ['ul.ui-tab-list li a', 'ul.red-select li a'];
-                let anchors = [];
-                for (const sel of selectors) {
-                    anchors = Array.from(document.querySelectorAll(sel));
-                    if (anchors.length > 0) break;
+                const ulSelectors = ['ul.ui-tab-list', 'ul.red-select'];
+                let ul = null;
+                
+                for (const sel of ulSelectors) {
+                    ul = document.querySelector(sel);
+                    if (ul) break;
                 }
                 
-                if (anchors.length === 0) {
-                    arr.push({ index: -1, text: '전체' });
-                } else {
-                    anchors.forEach((a, originalIdx) => {
-                        const text = (a.textContent||'').trim();
-                        if (text === '추천') return;
-                        arr.push({ index: originalIdx, text });
-                    });
+                if (!ul) {
+                    arr.push({ liId: null, text: '전체' });
+                    return arr;
                 }
+                
+                const liElements = Array.from(ul.querySelectorAll('li'));
+                liElements.forEach((li) => {
+                    const a = li.querySelector('a');
+                    if (!a) return;
+                    
+                    const text = (a.textContent || '').trim();
+                    if (text === '추천') return;
+                    
+                    const liId = li.getAttribute('id') || li.id || null;
+                    arr.push({ liId, text });
+                });
+                
                 return arr;
             }
         """)
         if not tabs:
-            tabs = [{'index': -1, 'text': '전체'}]
+            tabs = [{'liId': None, 'text': '전체'}]
 
         detail_targets = []
 
@@ -618,28 +627,46 @@ async def handle_wdic_mobile_list(
 
         for tab in tabs:
             try:
-                if tab.get('index', -1) >= 0:
+                li_id = tab.get('liId')
+                if li_id is not None:
+                    # 클릭 전 리스트 개수 기록
+                    prev_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                    
                     tab_clicked = await page.evaluate(f"""
                         () => {{
-                            const selectors = ['ul.ui-tab-list li a', 'ul.red-select li a'];
-                            let tabs = [];
-                            for (const sel of selectors) {{
-                                tabs = Array.from(document.querySelectorAll(sel));
-                                if (tabs.length > 0) break;
+                            const ulSelectors = ['ul.ui-tab-list', 'ul.red-select'];
+                            let ul = null;
+                            
+                            for (const sel of ulSelectors) {{
+                                ul = document.querySelector(sel);
+                                if (ul) break;
                             }}
                             
-                            if (tabs.length > {tab['index']}) {{
-                                tabs[{tab['index']}].click();
-                                return true;
-                            }}
-                            return false;
+                            if (!ul) return false;
+                            
+                            const li = ul.querySelector('li[id="{li_id}"]') || ul.querySelector('li#{li_id}');
+                            if (!li) return false;
+                            
+                            const a = li.querySelector('a');
+                            if (!a) return false;
+                            
+                            a.click();
+                            return true;
                         }}
                     """)
                     if tab_clicked:
+                        # 네트워크가 안정될 때까지 대기
                         try:
                             await page.wait_for_load_state('networkidle', timeout=5000)
-                        except:
-                            await page.wait_for_timeout(1200)
+                        except Exception:
+                            pass
+                        
+                        # 추가로 리스트 업데이트 확인 (최대 3초)
+                        for _ in range(6):
+                            await page.wait_for_timeout(500)
+                            new_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                            if new_count > 0:
+                                break
 
                 await _ensure_filter_all(page)
                 await page.wait_for_timeout(800)
@@ -659,8 +686,22 @@ async def handle_wdic_mobile_list(
                 """)
 
                 if sub_filters:
+                    # 서브 필터가 2개 이상이고 "전체"가 있으면 "전체"를 제외
+                    # (전체 = 모든 개별 필터의 합이므로 중복 방지)
+                    has_all_filter = any(f.get('text', '').strip() == '전체' for f in sub_filters)
+                    if len(sub_filters) > 1 and has_all_filter:
+                        sub_filters = [f for f in sub_filters if f.get('text', '').strip() != '전체']
+                        logger.info(f"탭 '{tab.get('text','')}': 서브 필터 '전체' 제외, {len(sub_filters)}개 개별 필터만 순회")
+                    else:
+                        logger.info(f"탭 '{tab.get('text','')}': 서브 필터 {len(sub_filters)}개 발견, 모두 순회")
+                    
                     for sub_filter in sub_filters:
+                        
                         try:
+                            # 서브 필터 클릭 전 현재 리스트 개수 기록
+                            prev_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                            
+                            # 서브 필터 클릭
                             sub_clicked = await page.evaluate(f"""
                                 () => {{
                                     const root = document.querySelector('.type-sub-item');
@@ -674,15 +715,23 @@ async def handle_wdic_mobile_list(
                                 }}
                             """)
                             if sub_clicked:
+                                # 네트워크가 안정될 때까지 대기 (최대 5초)
                                 try:
                                     await page.wait_for_load_state('networkidle', timeout=5000)
-                                except:
+                                except Exception:
                                     pass
-                                await page.wait_for_timeout(1500)
+                                
+                                # 추가로 리스트 업데이트 확인 (최대 3초)
+                                for _ in range(6):
+                                    await page.wait_for_timeout(500)
+                                    new_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                                    if new_count > 0 and new_count != prev_count:
+                                        break
 
                             clicks = await _click_more_until_exhausted(page)
                             items = await _extract_items(page)
                             
+                            # 현재 탭+서브필터의 목록 화면도 캡처
                             try:
                                 await _capture_list_snapshot(
                                     page,
@@ -690,8 +739,55 @@ async def handle_wdic_mobile_list(
                                     tab_text=tab.get('text', '').strip(),
                                     sub_filter_text=sub_filter.get('text', '').strip()
                                 )
-                            except:
+                            except Exception:
                                 pass
+
+                            li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                            
+                            # 상세링크 0개일 때 방어 로직: 재시도
+                            if len(items) == 0:
+                                if clicks == 0 and li_count == 0:
+                                    # 더보기 클릭이 0회이고 리스트도 없는 경우: 페이지 새로고침 후 재시도
+                                    logger.warning(f"⚠️  더보기 클릭 0회, 상세링크 0개 (li={li_count}) - 페이지 새로고침 후 재시도 중...")
+                                    await page.reload(timeout=10000)
+                                    await page.wait_for_timeout(2000)
+                                    try:
+                                        await page.wait_for_load_state('networkidle', timeout=5000)
+                                    except Exception:
+                                        pass
+                                    # 서브 필터 다시 클릭
+                                    if sub_clicked:
+                                        sub_clicked = await page.evaluate(f"""
+                                            () => {{
+                                                const root = document.querySelector('.type-sub-item');
+                                                if (!root) return false;
+                                                const filters = Array.from(root.querySelectorAll('a, button, label'));
+                                                if (filters.length > {sub_filter['index']}) {{
+                                                    filters[{sub_filter['index']}].click();
+                                                    return true;
+                                                }}
+                                                return false;
+                                            }}
+                                        """)
+                                        if sub_clicked:
+                                            await page.wait_for_timeout(2000)
+                                    clicks = await _click_more_until_exhausted(page)
+                                    items = await _extract_items(page)
+                                    li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                                elif li_count > 0:
+                                    # 리스트는 있지만 상세링크가 없는 경우: 페이지 로드 대기 후 재시도
+                                    logger.warning(f"⚠️  상세링크 0개 감지 (li={li_count}), 페이지 로드 재시도 중...")
+                                    await page.wait_for_timeout(2000)
+                                    try:
+                                        await page.wait_for_load_state('networkidle', timeout=5000)
+                                    except Exception:
+                                        pass
+                                    items = await _extract_items(page)
+                                
+                                if len(items) == 0:
+                                    logger.error(f"❌ 재시도 후에도 상세링크 0개: 탭='{tab.get('text','')}', 서브필터='{sub_filter.get('text','')}', clicks={clicks}, li={li_count}")
+                            
+                            logger.info(f"탭 '{tab.get('text','')}' > 서브필터 '{sub_filter.get('text','')}' 더보기 클릭 {clicks}회, li={li_count}, 상세링크={len(items)}개 수집")
 
                             for it in items:
                                 if not it.get('relHref'):
@@ -703,20 +799,53 @@ async def handle_wdic_mobile_list(
                                     'relHref': it['relHref']
                                 })
                         except Exception as e:
-                            logger.warning(f"⚠️ Sub-filter error: {str(e)}")
+                            logger.warning(f"서브 필터 '{sub_filter.get('text','')}' 처리 중 오류: {str(e)}")
                             continue
                 else:
+                    # 서브 필터 없으면 기존 로직
                     clicks = await _click_more_until_exhausted(page)
                     items = await _extract_items(page)
                     
+                    # 현재 탭의 목록 화면도 캡처
                     try:
                         await _capture_list_snapshot(
                             page,
                             base_menu=(menu or "").strip(),
                             tab_text=tab.get('text', '').strip()
                         )
-                    except:
+                    except Exception:
                         pass
+
+                    li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                    
+                    # 상세링크 0개일 때 방어 로직: 재시도
+                    if len(items) == 0:
+                        if clicks == 0 and li_count == 0:
+                            # 더보기 클릭이 0회이고 리스트도 없는 경우: 페이지 새로고침 후 재시도
+                            logger.warning(f"⚠️  더보기 클릭 0회, 상세링크 0개 (li={li_count}) - 페이지 새로고침 후 재시도 중...")
+                            await page.reload(timeout=10000)
+                            await page.wait_for_timeout(2000)
+                            try:
+                                await page.wait_for_load_state('networkidle', timeout=5000)
+                            except Exception:
+                                pass
+                            clicks = await _click_more_until_exhausted(page)
+                            items = await _extract_items(page)
+                            li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                        elif li_count > 0:
+                            # 리스트는 있지만 상세링크가 없는 경우: 페이지 로드 대기 후 재시도
+                            logger.warning(f"⚠️  상세링크 0개 감지 (li={li_count}), 페이지 로드 재시도 중...")
+                            await page.wait_for_timeout(2000)
+                            try:
+                                await page.wait_for_load_state('networkidle', timeout=5000)
+                            except Exception:
+                                pass
+                            items = await _extract_items(page)
+                        
+                        if len(items) == 0:
+                            logger.error(f"❌ 재시도 후에도 상세링크 0개: 탭='{tab.get('text','')}', clicks={clicks}, li={li_count}")
+                    
+                    logger.info(f"탭 '{tab.get('text','')}' 더보기 클릭 {clicks}회, li={li_count}, 상세링크={len(items)}개 수집")
 
                     for it in items:
                         if not it.get('relHref'):
@@ -727,22 +856,77 @@ async def handle_wdic_mobile_list(
                             'relHref': it['relHref']
                         })
             except Exception as e:
-                logger.warning(f"⚠️ Tab error: {str(e)}")
+                logger.warning(f"탭 처리 중 오류: {str(e)}")
                 continue
 
-        # 중복 제거
-        seen_itemcodes = set()
+        # 중복 제거 (ItemCode 기준)
+        seen_itemcodes = {}  # itemcode -> 첫 번째 발견된 target 정보
         unique_targets = []
+        duplicate_items = []  # 중복 제거된 아이템 목록
+        
         for target in detail_targets:
             match = re.search(r'ItemCode=(\d+)', target['relHref'])
             if match:
                 itemcode = match.group(1)
                 if itemcode in seen_itemcodes:
+                    first_target = seen_itemcodes[itemcode]
+                    duplicate_items.append({
+                        'itemcode': itemcode,
+                        'first_tab': first_target['tab'],
+                        'first_sub': first_target.get('sub_filter', ''),
+                        'duplicate_tab': target['tab'],
+                        'duplicate_sub': target.get('sub_filter', ''),
+                        'title': target.get('title', '')
+                    })
                     continue
-                seen_itemcodes.add(itemcode)
+                seen_itemcodes[itemcode] = target
             unique_targets.append(target)
         
-        logger.info(f"🔍 Dedupe: {len(detail_targets)} → {len(unique_targets)}")
+        # 탭별 개수 카운트 (중복 제거 전과 후)
+        tab_counts_before = {}
+        for target in detail_targets:
+            tab = target.get('tab', '기타')
+            tab_counts_before[tab] = tab_counts_before.get(tab, 0) + 1
+        
+        tab_counts_after = {}
+        for target in unique_targets:
+            tab = target.get('tab', '기타')
+            tab_counts_after[tab] = tab_counts_after.get(tab, 0) + 1
+        
+        logger.info(f"중복 제거: 전체 {len(detail_targets)}개 → 유니크 {len(unique_targets)}개 (중복 {len(duplicate_items)}개 제거)")
+        
+        # 중복 제거된 아이템 상세 로깅
+        if duplicate_items:
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🔍 중복 제거된 아이템 목록 ({len(duplicate_items)}개):")
+            logger.info(f"{'='*80}")
+            for i, dup in enumerate(duplicate_items, 1):
+                first_location = f"{dup['first_tab']}"
+                if dup['first_sub']:
+                    first_location += f" > {dup['first_sub']}"
+                
+                dup_location = f"{dup['duplicate_tab']}"
+                if dup['duplicate_sub']:
+                    dup_location += f" > {dup['duplicate_sub']}"
+                
+                logger.info(f"   {i}. ItemCode={dup['itemcode']}")
+                logger.info(f"      유지: [{first_location}]")
+                logger.info(f"      삭제: [{dup_location}]")
+                logger.info(f"      제목: {dup['title'][:50]}")
+            logger.info(f"{'='*80}\n")
+        
+        if tab_counts_after:
+            # 탭별 중복 제거 전후 비교
+            logger.info("📊 탭별 개수 (중복 제거 전 → 후):")
+            for tab in sorted(set(list(tab_counts_before.keys()) + list(tab_counts_after.keys()))):
+                before = tab_counts_before.get(tab, 0)
+                after = tab_counts_after.get(tab, 0)
+                diff = before - after
+                if diff > 0:
+                    logger.info(f"   {tab}: {before} → {after} (중복 {diff}개)")
+                else:
+                    logger.info(f"   {tab}: {after}")
+        
         detail_targets = unique_targets
 
         # 상세 처리
@@ -767,14 +951,14 @@ async def handle_wdic_mobile_list(
 
                 menus.append({'menu': final_menu or (result.get('title') or ''), 'url': detail_url})
                 datas.append(result)
-                logger.info(f"✅ [{i}/{len(detail_targets)}] Done: {detail_url}")
+                logger.info(f"[{i}/{len(detail_targets)}] 상세 처리 완료: {detail_url}")
             except Exception as e:
-                logger.error(f"❌ Detail error: {detail_url} - {str(e)}")
+                logger.error(f"상세 처리 중 오류: {detail_url} - {str(e)}")
                 continue
 
         await browser.close()
 
-    logger.info(f"✅ wDic list done: {len(datas)} items")
+    logger.info(f"✅ wDic 목록 처리 완료: {len(datas)}개 아이템 수집")
 
     return {
         'menus': menus,

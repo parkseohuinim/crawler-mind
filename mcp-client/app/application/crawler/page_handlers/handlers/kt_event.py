@@ -90,13 +90,18 @@ async def handle_kt_event_detail(
                     infoItems.forEach(item => {
                         const text = item.textContent.trim();
                         if (text.includes('응모기간')) {
-                            info.period = text.replace('응모기간 : ', '').trim();
+                            const periodMatch = text.match(/(\d{4}\.\d{1,2}\.\d{1,2})\s*~\s*(\d{4}\.\d{1,2}\.\d{1,2})/);
+                            if (periodMatch) {
+                                info.period = periodMatch[0];  // "2026.01.02 ~ 2026.01.31"
+                            } else {
+                                info.period = text.replace(/응모기간\s*:\s*/g, '').trim();
+                            }
                         } else if (text.includes('응모대상')) {
-                            info.target = text.replace('응모대상 : ', '').trim();
+                            info.target = text.replace(/응모대상\s*:\s*/g, '').trim();
                         } else if (text.includes('당첨자발표')) {
-                            info.announcement = text.replace('당첨자발표 : ', '').trim();
+                            info.announcement = text.replace(/당첨자발표\s*:\s*/g, '').trim();
                         } else if (text.includes('이벤트문의')) {
-                            info.inquiry = text.replace('이벤트문의 : ', '').trim();
+                            info.inquiry = text.replace(/이벤트문의\s*:\s*/g, '').trim();
                         }
                     });
                 }
@@ -116,19 +121,34 @@ async def handle_kt_event_detail(
             }""")
             
             # 기간 파싱
-            startdate = '0000-00-00'
-            enddate = '9999-99-99'
+            startdate = '1900-01-01'  # 기본값
+            enddate = '2999-12-31'    # 기본값
             period_text = event_info.get('period') or ''
+            
+            logger.info(f"📅 Period text extracted: '{period_text}'")
+            
             if period_text:
-                parts = [p.strip() for p in re.split(r"~|–|-|to", period_text) if p and p.strip()]
+                # "2026.01.02 ~ 2026.01.31" 형태를 파싱
+                parts = [p.strip() for p in re.split(r"\s*~\s*", period_text)]
+                logger.info(f"📅 Period parts after split: {parts}")
+                
                 if len(parts) >= 1:
                     sd = _parse_date_to_hyphen(parts[0])
                     if sd:
                         startdate = sd
+                        logger.info(f"✅ Start date parsed: {startdate}")
+                    else:
+                        logger.warning(f"⚠️ Failed to parse start date from: '{parts[0]}'")
+                
                 if len(parts) >= 2:
                     ed = _parse_date_to_hyphen(parts[1])
                     if ed:
                         enddate = ed
+                        logger.info(f"✅ End date parsed: {enddate}")
+                    else:
+                        logger.warning(f"⚠️ Failed to parse end date from: '{parts[1]}'")
+            else:
+                logger.warning(f"⚠️ No period text found for event: {event_info.get('title', 'unknown')}")
             
             # iframe 내용 처리
             iframe_content = ""

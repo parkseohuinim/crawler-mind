@@ -183,8 +183,8 @@ async def handle_kt_notice_detail(
     
     mobile_url = url.replace('inside.kt.com', 'm.kt.com') if 'inside.kt.com' in url else None
     
-    startdate_hyphen = "0000-00-00"
-    enddate_hyphen = "9999-99-99"
+    startdate_hyphen = "1900-01-01"
+    enddate_hyphen = "2999-12-31"
     try:
         dm = re.search(r"(\d{4})[.\-](\d{2})[.\-](\d{2})", actual_date)
         if dm:

@@ -174,8 +174,8 @@ async def handle_roaming_notice(
             return f"{y}-{mo.zfill(2)}-{d.zfill(2)}"
         return ""
 
-    startdate_hyphen = "0000-00-00"
-    enddate_hyphen = "9999-99-99"
+    startdate_hyphen = "1900-01-01"
+    enddate_hyphen = "2999-12-31"
 
     text_for_range = (metadata.get('contentHtml') or '') + ' ' + (content or '')
     inherit_left_year = False

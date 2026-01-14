@@ -102,8 +102,8 @@ async def handle_show_notice(url: str, fclient: Any) -> Dict[str, Any]:
         next_url = f"{base_url}/Partner/KT/Event/{metadata['prevLink']}"
     
     # startdate/enddate 계산
-    startdate_hyphen = "0000-00-00"
-    enddate_hyphen = "9999-99-99"
+    startdate_hyphen = "1900-01-01"
+    enddate_hyphen = "2999-12-31"
     try:
         dm = re.search(r"(\d{4})[.\-](\d{2})[.\-](\d{2})", metadata.get('date', ''))
         if dm:
