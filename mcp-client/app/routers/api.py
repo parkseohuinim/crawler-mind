@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends, Path, UploadFile, 
 from fastapi.responses import StreamingResponse, Response
 import logging
 import math
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -834,3 +834,177 @@ async def stream_daily_crawl_task(task_id: str = Path(..., description="Task ID"
     except Exception as e:
         logger.error(f"Daily Crawling SSE stream failed: {e}")
         raise HTTPException(status_code=500, detail=f"Daily Crawling 스트림 생성 실패: {str(e)}")
+
+
+# === Test Endpoint: Crawl with Markdown File Output ===
+
+class CrawlTestRequest(BaseModel):
+    """크롤링 테스트 요청 (마크다운 파일 저장)"""
+    url: str = Field(..., description="크롤링할 URL")
+    save_files: bool = Field(True, description="마크다운 파일로 저장 여부")
+
+
+class CrawlTestResponse(BaseModel):
+    """크롤링 테스트 응답"""
+    success: bool
+    url: str
+    title: Optional[str] = None
+    original_markdown: Optional[str] = None
+    processed_markdown: Optional[str] = None
+    process_type: Optional[str] = None
+    files_saved: Optional[dict] = None
+    json_result: Optional[dict] = None
+    error: Optional[str] = None
+
+
+@router.post("/daily-crawling/test", response_model=CrawlTestResponse, tags=["daily-crawling"])
+async def crawl_test_with_files(request: CrawlTestRequest):
+    """
+    크롤링 테스트 엔드포인트 - 원본/전처리 마크다운 파일 저장
+    
+    단일 URL을 크롤링하여:
+    1. 추출된 원본 마크다운 (original.md)
+    2. 전처리 후 마크다운 (processed.md)
+    3. HTML 원본 (html.html, 있는 경우)
+    4. JSON 결과
+    를 파일로 저장하고 반환합니다.
+    """
+    from pathlib import Path
+    from datetime import datetime
+    from app.application.crawler.tools_client import crawler_tools
+    from app.application.crawler.page_handlers import route_url, get_handler_for_url, page_handler_client
+    from app.application.crawler.preprocess import preprocess_content
+    
+    try:
+        url = request.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="URL이 비어있습니다")
+        
+        # 결과 저장 디렉토리
+        result_dir = Path(__file__).parent.parent / "application" / "crawler" / "result" / "test"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        test_dir = result_dir / timestamp
+        
+        # 1. 크롤링 실행
+        logger.info(f"🔍 Test crawling: {url}")
+        
+        handler_info = get_handler_for_url(url)
+        crawl_result = None
+        
+        if handler_info:
+            pattern, handler_func = handler_info
+            logger.info(f"🔗 Handler matched: {handler_func.__name__}")
+            handler_result = await route_url(url, page_handler_client, "")
+            
+            if handler_result:
+                crawl_result = {
+                    "success": True,
+                    "url": url,
+                    "title": handler_result.get("title"),
+                    "markdown": handler_result.get("markdown", ""),
+                    "html_content": handler_result.get("html", ""),
+                    "handler_name": handler_func.__name__,
+                }
+        
+        if not crawl_result:
+            # 기본 MCP 스크래핑
+            logger.info(f"🔍 Default scraping: {url}")
+            tool_result = await crawler_tools.scrape(url)
+            
+            if tool_result.get("success"):
+                crawl_result = {
+                    "success": True,
+                    "url": url,
+                    "title": tool_result.get("title"),
+                    "markdown": tool_result.get("markdown", ""),
+                    "html_content": tool_result.get("html_content", ""),
+                }
+            else:
+                return CrawlTestResponse(
+                    success=False,
+                    url=url,
+                    error=tool_result.get("error", "스크래핑 실패")
+                )
+        
+        if not crawl_result or not crawl_result.get("success"):
+            return CrawlTestResponse(
+                success=False,
+                url=url,
+                error="크롤링 실패"
+            )
+        
+        # 2. 전처리 실행
+        original_markdown = crawl_result.get("markdown", "")
+        html_content = crawl_result.get("html_content", "")
+        
+        processed_markdown, process_type = preprocess_content(
+            markdown_text=original_markdown,
+            menu_path="",
+            html_content=html_content
+        )
+        
+        # 3. 파일 저장 (옵션)
+        files_saved = None
+        if request.save_files:
+            test_dir.mkdir(parents=True, exist_ok=True)
+            
+            # URL 정보 저장
+            url_file = test_dir / "url.txt"
+            url_file.write_text(url, encoding="utf-8")
+            
+            # 원본 마크다운 저장
+            original_file = test_dir / "original.md"
+            original_file.write_text(original_markdown, encoding="utf-8")
+            
+            # 전처리된 마크다운 저장
+            processed_file = test_dir / "processed.md"
+            processed_file.write_text(processed_markdown, encoding="utf-8")
+            
+            # HTML 저장 (있는 경우)
+            html_file = None
+            if html_content:
+                html_file = test_dir / "html.html"
+                html_file.write_text(html_content, encoding="utf-8")
+            
+            files_saved = {
+                "directory": str(test_dir),
+                "url_file": str(url_file),
+                "original_md": str(original_file),
+                "processed_md": str(processed_file),
+                "html_file": str(html_file) if html_file else None,
+            }
+            
+            logger.info(f"✅ Test files saved: {test_dir}")
+        
+        # 4. JSON 결과 구성
+        import unicodedata
+        title = crawl_result.get("title") or "제목 없음"
+        title = unicodedata.normalize('NFC', title)
+        
+        json_result = {
+            "url": url,
+            "title": title,
+            "text": processed_markdown.replace("\n", "\\n"),
+            "process_type": process_type,
+            "original_length": len(original_markdown),
+            "processed_length": len(processed_markdown),
+        }
+        
+        return CrawlTestResponse(
+            success=True,
+            url=url,
+            title=title,
+            original_markdown=original_markdown,
+            processed_markdown=processed_markdown,
+            process_type=process_type,
+            files_saved=files_saved,
+            json_result=json_result
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Test crawling failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"테스트 크롤링 실패: {str(e)}")
