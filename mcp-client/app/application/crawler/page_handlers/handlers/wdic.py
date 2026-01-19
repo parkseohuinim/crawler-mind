@@ -686,14 +686,8 @@ async def handle_wdic_mobile_list(
                 """)
 
                 if sub_filters:
-                    # 서브 필터가 2개 이상이고 "전체"가 있으면 "전체"를 제외
-                    # (전체 = 모든 개별 필터의 합이므로 중복 방지)
-                    has_all_filter = any(f.get('text', '').strip() == '전체' for f in sub_filters)
-                    if len(sub_filters) > 1 and has_all_filter:
-                        sub_filters = [f for f in sub_filters if f.get('text', '').strip() != '전체']
-                        logger.info(f"탭 '{tab.get('text','')}': 서브 필터 '전체' 제외, {len(sub_filters)}개 개별 필터만 순회")
-                    else:
-                        logger.info(f"탭 '{tab.get('text','')}': 서브 필터 {len(sub_filters)}개 발견, 모두 순회")
+                    # 서브 필터가 있으면 모두 순회 (중복은 나중에 제거)
+                    logger.info(f"탭 '{tab.get('text','')}': 서브 필터 {len(sub_filters)}개 발견, 모두 순회")
                     
                     for sub_filter in sub_filters:
                         
@@ -859,8 +853,24 @@ async def handle_wdic_mobile_list(
                 logger.warning(f"탭 처리 중 오류: {str(e)}")
                 continue
 
-        # 중복 제거 (ItemCode 기준)
-        seen_itemcodes = {}  # itemcode -> 첫 번째 발견된 target 정보
+        # 중복 제거 (ItemCode 기준) - "전체"보다 특정 탭 우선
+        def count_specific_filters(target):
+            """
+            "전체"가 아닌 구체적인 필터의 개수를 카운트
+            개수가 많을수록 더 구체적인 경로
+            """
+            tab = target.get('tab', '').strip()
+            sub_filter = target.get('sub_filter', '').strip()
+            
+            count = 0
+            if tab and tab != '전체':
+                count += 1
+            if sub_filter and sub_filter != '전체':
+                count += 1
+            
+            return count
+        
+        seen_itemcodes = {}  # itemcode -> 가장 구체적인 target 정보
         unique_targets = []
         duplicate_items = []  # 중복 제거된 아이템 목록
         
@@ -869,15 +879,37 @@ async def handle_wdic_mobile_list(
             if match:
                 itemcode = match.group(1)
                 if itemcode in seen_itemcodes:
-                    first_target = seen_itemcodes[itemcode]
-                    duplicate_items.append({
-                        'itemcode': itemcode,
-                        'first_tab': first_target['tab'],
-                        'first_sub': first_target.get('sub_filter', ''),
-                        'duplicate_tab': target['tab'],
-                        'duplicate_sub': target.get('sub_filter', ''),
-                        'title': target.get('title', '')
-                    })
+                    existing_target = seen_itemcodes[itemcode]
+                    existing_count = count_specific_filters(existing_target)
+                    current_count = count_specific_filters(target)
+                    
+                    # 현재 항목이 더 구체적이면 교체
+                    if current_count > existing_count:
+                        # 기존 항목을 중복 목록에 추가
+                        duplicate_items.append({
+                            'itemcode': itemcode,
+                            'kept_tab': target['tab'],
+                            'kept_sub': target.get('sub_filter', ''),
+                            'removed_tab': existing_target['tab'],
+                            'removed_sub': existing_target.get('sub_filter', ''),
+                            'title': target.get('title', ''),
+                            'reason': f'더 구체적 (특정 필터 {current_count}개 > {existing_count}개)'
+                        })
+                        # 기존 항목을 unique_targets에서 제거하고 현재 항목으로 교체
+                        unique_targets = [t for t in unique_targets if not (re.search(r'ItemCode=(\d+)', t['relHref']) and re.search(r'ItemCode=(\d+)', t['relHref']).group(1) == itemcode)]
+                        seen_itemcodes[itemcode] = target
+                        unique_targets.append(target)
+                    else:
+                        # 기존 항목이 더 구체적이거나 같으면 현재 항목 버림
+                        duplicate_items.append({
+                            'itemcode': itemcode,
+                            'kept_tab': existing_target['tab'],
+                            'kept_sub': existing_target.get('sub_filter', ''),
+                            'removed_tab': target['tab'],
+                            'removed_sub': target.get('sub_filter', ''),
+                            'title': target.get('title', ''),
+                            'reason': f'덜 구체적이거나 동일 (특정 필터 {current_count}개 <= {existing_count}개)'
+                        })
                     continue
                 seen_itemcodes[itemcode] = target
             unique_targets.append(target)
@@ -901,17 +933,18 @@ async def handle_wdic_mobile_list(
             logger.info(f"🔍 중복 제거된 아이템 목록 ({len(duplicate_items)}개):")
             logger.info(f"{'='*80}")
             for i, dup in enumerate(duplicate_items, 1):
-                first_location = f"{dup['first_tab']}"
-                if dup['first_sub']:
-                    first_location += f" > {dup['first_sub']}"
+                kept_location = f"{dup['kept_tab']}"
+                if dup['kept_sub']:
+                    kept_location += f" > {dup['kept_sub']}"
                 
-                dup_location = f"{dup['duplicate_tab']}"
-                if dup['duplicate_sub']:
-                    dup_location += f" > {dup['duplicate_sub']}"
+                removed_location = f"{dup['removed_tab']}"
+                if dup['removed_sub']:
+                    removed_location += f" > {dup['removed_sub']}"
                 
                 logger.info(f"   {i}. ItemCode={dup['itemcode']}")
-                logger.info(f"      유지: [{first_location}]")
-                logger.info(f"      삭제: [{dup_location}]")
+                logger.info(f"      유지: [{kept_location}]")
+                logger.info(f"      삭제: [{removed_location}]")
+                logger.info(f"      사유: {dup['reason']}")
                 logger.info(f"      제목: {dup['title'][:50]}")
             logger.info(f"{'='*80}\n")
         
@@ -951,6 +984,27 @@ async def handle_wdic_mobile_list(
 
                 menus.append({'menu': final_menu or (result.get('title') or ''), 'url': detail_url})
                 datas.append(result)
+                
+                # additional_details 처리: N-pdt-compare-column의 "자세히 보기" 링크로 추출된 하위 상품들
+                additional_details = result.get('additional_details', [])
+                if additional_details:
+                    logger.info(f"  📦 하위 상품 {len(additional_details)}개 발견")
+                    for sub_result in additional_details:
+                        # 하위 상품의 메뉴 구성: final_menu^하위상품명
+                        sub_product_name = sub_result.get('parent_product_name') or sub_result.get('title', '')
+                        if sub_product_name:
+                            # 이름 정제 (줄바꿈, 연속 공백 제거)
+                            sub_product_name = re.sub(r'[\r\n]+', ' ', sub_product_name)
+                            sub_product_name = re.sub(r'\s+', ' ', sub_product_name).strip()
+                            sub_menu = f"{final_menu}^{sub_product_name}"
+                        else:
+                            sub_menu = final_menu
+                        
+                        sub_url = sub_result.get('url', '')
+                        menus.append({'menu': sub_menu, 'url': sub_url, 'murl': sub_result.get('murl', '')})
+                        datas.append(sub_result)
+                        logger.info(f"    └─ 하위 상품 추가: {sub_menu}")
+                
                 logger.info(f"[{i}/{len(detail_targets)}] 상세 처리 완료: {detail_url}")
             except Exception as e:
                 logger.error(f"상세 처리 중 오류: {detail_url} - {str(e)}")
