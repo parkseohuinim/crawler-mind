@@ -10,6 +10,11 @@ from .preprocessor import (
     clean_markdown_info,
     clean_markdown_notice,
 )
+from .similarity import (
+    TextSimilarityAnalyzer,
+    DuplicateInfo,
+    default_analyzer,
+)
 
 __all__ = [
     "preprocess_content",
@@ -17,6 +22,9 @@ __all__ = [
     "is_notice_path",
     "clean_markdown_info",
     "clean_markdown_notice",
+    "TextSimilarityAnalyzer",
+    "DuplicateInfo",
+    "default_analyzer",
 ]
 
 

@@ -35,7 +35,7 @@ MARKDOWN_RESULT_DIR = Path(__file__).parent / "result"
 
 
 class RAGCrawlingService:
-    """RAG 스크래핑 서비스 - rag-scraping의 app.py 워크플로우 기반"""
+    """RAG 스크래핑 서비스"""
     
     def __init__(self) -> None:
         self.tasks: Dict[str, TaskResult] = {}
@@ -297,13 +297,14 @@ class RAGCrawlingService:
         url_menu_map: Dict[str, MenuLink],
     ) -> List[Dict[str, Any]]:
         json_results: List[Dict[str, Any]] = []
-
-        for idx, result in enumerate(processed_results, start=1):
+        
+        # ----- JSON 변환 단계 -----
+        for idx, result in enumerate(processed_results):
             await self._send_update(
                 task_id,
                 "status",
                 {
-                    "message": f"JSON 변환 진행: {idx}/{len(processed_results)} - {result['url']}",
+                    "message": f"JSON 변환 진행: {idx + 1}/{len(processed_results)} - {result['url']}",
                     "status": "active",
                 },
             )
@@ -363,6 +364,7 @@ class RAGCrawlingService:
                 "title": result.get("title"),
                 "menu_path": menu.menu_path if menu else None,
             }
+            
             json_results.append(json_data)
             
         return json_results

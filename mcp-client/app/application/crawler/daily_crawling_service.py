@@ -23,7 +23,9 @@ from app.application.crawler.page_handlers import (
     get_handler_for_url,
     page_handler_client,
 )
+from app.application.crawler.page_handlers.utils import to_mshop_url, to_mproduct_url
 from app.application.crawler.preprocess import preprocess_content
+from app.application.crawler.preprocess.similarity import TextSimilarityAnalyzer
 from app.domains.crawler.entities.input_url import InputUrl
 from app.domains.crawler.repositories.input_url_repository import input_url_repository
 from app.domains.menu.entities.menu_link import MenuLink
@@ -865,15 +867,13 @@ class DailyCrawlingService:
         if "event.kt.com" in pc_url:
             return pc_url.replace("https://event.kt.com", "https://m.kt.com")
         
-        # KT Shop URL 변환
+        # KT Shop URL 변환 - to_mshop_url 사용하여 PC 전용 파라미터 제거
         if "shop.kt.com" in pc_url:
-            return pc_url.replace("https://shop.kt.com", "https://m.shop.kt.com")
+            return to_mshop_url(pc_url)
         
-        # product.kt.com 변환
+        # product.kt.com 변환 - to_mproduct_url 사용하여 PC 전용 파라미터(filter_code 등) 제거
         if "product.kt.com" in pc_url:
-            mobile_url = pc_url.replace("https://product.kt.com", "https://m.product.kt.com")
-            mobile_url = mobile_url.replace("/wDic/", "/mDic/")
-            return mobile_url
+            return to_mproduct_url(pc_url)
         
         # 기타 kt.com 도메인
         if "kt.com" in pc_url and "://m." not in pc_url:
@@ -1150,6 +1150,31 @@ class DailyCrawlingService:
             logger.warning(f"⚠️ No results to save: {task_id}")
             return None
         
+        # ----- 유사도 분석 단계 -----
+        await self._send_update(
+            task_id,
+            "status",
+            {"message": "텍스트 유사도 분석 중...", "status": "active"},
+        )
+        
+        results = self._apply_similarity_analysis(results)
+        
+        # 중복 개수 카운트
+        duplicate_count = sum(1 for r in results if r.get("status") == "duplicate")
+        if duplicate_count > 0:
+            await self._send_update(
+                task_id,
+                "status",
+                {"message": f"유사도 분석 완료: {duplicate_count}개 중복 감지", "status": "active"},
+            )
+            logger.info(f"📊 유사도 분석 완료: {duplicate_count}개 중복 감지")
+        else:
+            await self._send_update(
+                task_id,
+                "status",
+                {"message": "유사도 분석 완료: 중복 없음", "status": "active"},
+            )
+        
         # 결과 디렉토리 생성
         RESULT_DIR.mkdir(parents=True, exist_ok=True)
         
@@ -1168,6 +1193,139 @@ class DailyCrawlingService:
         except Exception as e:
             logger.error(f"❌ JSON save failed: {e}")
             return None
+    
+    def _apply_similarity_analysis(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        결과 리스트에 유사도 분석을 적용하여 중복 항목을 삭제
+        
+        원본/중복 결정 기준:
+        1. hierarchy depth가 더 깊은 것(하위) → 원본 유지
+        2. depth가 같으면 docId 숫자가 더 작은 것 → 원본 유지
+        
+        Args:
+            results: JSON 결과 리스트
+            
+        Returns:
+            중복이 삭제된 결과 리스트
+        """
+        if len(results) < 2:
+            return results
+        
+        try:
+            # 유효한 텍스트와 URL 추출 (인덱스 유지)
+            valid_indices = []
+            texts = []
+            urls = []
+            
+            for idx, item in enumerate(results):
+                text = item.get("text", "")
+                url = item.get("url", "")
+                if text and text.strip() and url:
+                    valid_indices.append(idx)
+                    texts.append(text)
+                    urls.append(url)
+            
+            if len(texts) < 2:
+                return results
+            
+            # 유사도 분석 실행 (임계값 0.95)
+            analyzer = TextSimilarityAnalyzer(threshold=0.95)
+            duplicates, dup_map = analyzer.find_duplicates(texts, urls)
+            
+            if not duplicates:
+                return results
+            
+            # 삭제할 인덱스 수집
+            indices_to_remove = set()
+            
+            for dup_info in duplicates:
+                # valid_indices를 통해 실제 results 인덱스로 변환
+                idx_a = valid_indices[dup_info.original_idx]
+                idx_b = valid_indices[dup_info.duplicate_idx]
+                
+                # 원본/중복 결정: hierarchy depth가 깊은 것이 원본, 같으면 docId가 작은 것이 원본
+                original_idx, duplicate_idx = self._determine_original_and_duplicate(
+                    results[idx_a], results[idx_b], idx_a, idx_b
+                )
+                
+                # 이미 삭제 대상인 항목이 원본으로 선택된 경우 스킵
+                if original_idx in indices_to_remove:
+                    continue
+                
+                indices_to_remove.add(duplicate_idx)
+                
+                original_url = results[original_idx].get("url", "")
+                duplicate_url = results[duplicate_idx].get("url", "")
+                logger.info(
+                    f"중복 삭제 예정: {duplicate_url} (원본: {original_url}, "
+                    f"유사도: {dup_info.similarity_score:.4f})"
+                )
+            
+            # 중복 항목 삭제 (인덱스 역순으로 삭제해야 인덱스가 밀리지 않음)
+            for idx in sorted(indices_to_remove, reverse=True):
+                del results[idx]
+            
+            logger.info(f"📊 중복 {len(indices_to_remove)}개 삭제 완료")
+            
+            return results
+            
+        except Exception as e:
+            logger.warning(f"유사도 분석 중 오류 발생: {e}")
+            return results
+    
+    def _determine_original_and_duplicate(
+        self, 
+        item_a: Dict[str, Any], 
+        item_b: Dict[str, Any],
+        idx_a: int,
+        idx_b: int
+    ) -> tuple:
+        """
+        두 중복 항목 중 원본과 중복을 결정
+        
+        기준:
+        1. hierarchy depth가 더 깊은 것(하위) → 원본
+        2. depth가 같으면 docId 숫자가 더 작은 것 → 원본
+        
+        Returns:
+            (original_idx, duplicate_idx)
+        """
+        # hierarchy depth 비교
+        depth_a = len(item_a.get("hierarchy", []))
+        depth_b = len(item_b.get("hierarchy", []))
+        
+        if depth_a != depth_b:
+            # depth가 더 깊은 것이 원본
+            if depth_a > depth_b:
+                return idx_a, idx_b
+            else:
+                return idx_b, idx_a
+        
+        # depth가 같으면 docId 숫자 비교
+        docid_a = item_a.get("docId", "")
+        docid_b = item_b.get("docId", "")
+        
+        num_a = self._extract_docid_number(docid_a)
+        num_b = self._extract_docid_number(docid_b)
+        
+        # docId 숫자가 더 작은 것이 원본
+        if num_a <= num_b:
+            return idx_a, idx_b
+        else:
+            return idx_b, idx_a
+    
+    def _extract_docid_number(self, docid: str) -> int:
+        """
+        docId에서 숫자 부분 추출
+        예: "ktcom_1764" -> 1764
+        """
+        if not docid:
+            return float('inf')  # docId가 없으면 가장 큰 값으로 처리
+        
+        match = re.search(r'(\d+)$', docid)
+        if match:
+            return int(match.group(1))
+        return float('inf')
     
     async def _send_update(self, task_id: str, update_type: str, data: Dict[str, Any]) -> None:
         """SSE 업데이트 전송"""
