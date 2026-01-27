@@ -397,17 +397,8 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
             prodno = (item.get('prodno') or '').strip()
             detail_url = url
             if prodno:
-                params = []
-                if item.get('sntyno'):
-                    params.append(f"sntyNo={item['sntyno']}")
-                if item.get('pplid'):
-                    params.append(f"pplId={item['pplid']}")
-                if item.get('svcengtmonstypecd'):
-                    params.append(f"svcEngtMonsTypeCd={item['svcengtmonstypecd']}")
-                if item.get('supporttype'):
-                    params.append(f"supportType={item['supporttype']}")
-                qp = "&".join(params)
-                detail_url = f"https://shop.kt.com/mobile/view.do?prodNo={prodno}" + (f"&{qp}" if qp else '')
+                # prodNo만 포함 (sntyNo, pplId, svcEngtMonsTypeCd, supportType 제거)
+                detail_url = f"https://shop.kt.com/mobile/view.do?prodNo={prodno}"
             normalized.append({'name': prodnm, 'url': detail_url, 'prodno': prodno})
 
         logger.info(f"🔍 Normalized: {len(normalized)} items")

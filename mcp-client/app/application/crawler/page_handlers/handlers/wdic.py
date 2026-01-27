@@ -279,7 +279,6 @@ async def handle_product_detail(
                                 clean_name = link_info['name']
                                 clean_name = re.sub(r'[\r\n]+', ' ', clean_name)
                                 clean_name = re.sub(r'\s+', ' ', clean_name)
-                                clean_name = re.sub(r'[^\w\sㄱ-ㅎㅏ-ㅣ가-힣/\-\(\)]', '', clean_name)
                                 clean_name = clean_name.strip()
                                 
                                 detail_url = link_info['href']
@@ -495,7 +494,14 @@ async def handle_wdic_mobile_list(
                     try{
                         const a = document.createElement('a');
                         a.href = href;
-                        const rel = `${a.pathname}${a.search||''}`;
+                        // ItemCode, CateCode, filter_code 유지 (option_code, pageSize 제거)
+                        const params = new URLSearchParams(a.search);
+                        const essentialParams = new URLSearchParams();
+                        if (params.has('ItemCode')) essentialParams.set('ItemCode', params.get('ItemCode'));
+                        if (params.has('CateCode')) essentialParams.set('CateCode', params.get('CateCode'));
+                        if (params.has('filter_code')) essentialParams.set('filter_code', params.get('filter_code'));
+                        const cleanSearch = essentialParams.toString() ? '?' + essentialParams.toString() : '';
+                        const rel = `${a.pathname}${cleanSearch}`;
                         return rel.startsWith('/wDic/') ? rel : (rel.startsWith('/') ? rel : `/wDic/${rel}`);
                     }catch(e){
                         return href.startsWith('/wDic/') ? href : (href.startsWith('/') ? href : `/wDic/${href}`);

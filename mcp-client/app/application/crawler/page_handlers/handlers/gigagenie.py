@@ -414,21 +414,61 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
                             year += 2000 if year < 70 else 1900
                             startdate = f"{year}-{m.group(2)}-{m.group(3)}"
 
-                    content_selectors = [
-                        "div.cfmOllehNewsCont",
-                        "div.fjbNewsArea",
-                        "div[style*='background']"
-                    ]
+                    # 본문 콘텐츠 추출 - #cfmClContents 우선 사용
+                    # 실제 구조: #cfmClContents > (h3.cfmOllehNewsTitle + div[style*='background'] 여러개)
                     inner_html = ""
-                    for selector in content_selectors:
-                        elem = await detail_page.query_selector(selector)
-                        if elem:
-                            inner_html = await elem.inner_html()
-                            if inner_html and inner_html.strip():
-                                break
+                    try:
+                        inner_html = await detail_page.evaluate("""
+                            () => {
+                                const container = document.querySelector('#cfmClContents');
+                                if (!container) return '';
+                                
+                                // 컨테이너 복제 (원본 DOM 유지)
+                                const clone = container.cloneNode(true);
+                                
+                                // 불필요한 요소 제거
+                                const removeSelectors = [
+                                    '.cfmClvisual',      // 상단 비주얼 영역
+                                    '.location',         // 위치 네비게이션
+                                    '.btnNewsList',      // 목록 버튼
+                                    '#bt_list',          // 목록 버튼 ID
+                                    '.blind',            // 스크린리더 전용 요소
+                                    'script',            // 스크립트
+                                    'style',             // 스타일
+                                ];
+                                removeSelectors.forEach(sel => {
+                                    clone.querySelectorAll(sel).forEach(el => el.remove());
+                                });
+                                
+                                return clone.innerHTML;
+                            }
+                        """)
+                        if inner_html and len(inner_html.strip()) > 100:
+                            logger.info(f"✅ Content found with #cfmClContents")
+                    except Exception as e:
+                        logger.warning(f"⚠️ #cfmClContents extraction failed: {e}")
+                    
+                    # fallback: 다른 선택자 시도
+                    if not inner_html or len(inner_html.strip()) < 100:
+                        content_selectors = [
+                            "div.cfmOllehNewsCont",
+                            "div.fjbNewsArea",
+                            "div.fjbBlogDetail",
+                            "div.fjbNewsDetail",
+                            "#content",
+                            "main",
+                            "article",
+                        ]
+                        for selector in content_selectors:
+                            elem = await detail_page.query_selector(selector)
+                            if elem:
+                                inner_html = await elem.inner_html()
+                                if inner_html and inner_html.strip() and len(inner_html.strip()) > 100:
+                                    logger.info(f"✅ Content found with selector: {selector}")
+                                    break
 
-                    if not inner_html:
-                        logger.warning(f"⚠️ Main content not found: {detail_url}")
+                    if not inner_html or len(inner_html.strip()) < 50:
+                        logger.warning(f"⚠️ Main content not found or too short: {detail_url}")
 
                     markdown_content = md(inner_html, heading_style="ATX") if inner_html else ""
                     html_content = inner_html or ""

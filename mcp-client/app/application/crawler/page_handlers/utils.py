@@ -81,10 +81,105 @@ def sanitize_filename(filename: str, max_length: int = 100) -> str:
 
 
 def to_mshop_url(url: str) -> str:
-    """KT Shop PC URL을 모바일(https://m.shop.kt.com:444) 형태로 변환"""
+    """
+    KT Shop PC URL을 모바일(https://m.shop.kt.com:444) 형태로 변환
+    
+    모바일에서 지원하지 않는 PC 전용 쿼리 파라미터를 제거합니다:
+    - filterCode: 필터 코드 (모바일 미지원)
+    - sntyNo: 계약유형번호 (모바일 미지원)
+    - pplId: 요금제 ID (모바일 미지원)
+    - svcEngtMonsTypeCd: 서비스약정개월유형코드 (모바일 미지원)
+    - supportType: 지원유형 (모바일 미지원)
+    """
     if not url or not url.startswith('http'):
         return ''
-    return url.replace('https://shop.kt.com', 'https://m.shop.kt.com:444/m')
+    
+    # shop.kt.com이 아닌 URL은 단순 반환
+    if 'shop.kt.com' not in url:
+        return url
+    
+    # URL 파싱
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query, keep_blank_values=True)
+    
+    # 모바일에서 지원하지 않는 PC 전용 파라미터 목록
+    pc_only_params = [
+        'filterCode',      # 필터 코드
+        'sntyNo',          # 계약유형번호
+        'pplId',           # 요금제 ID
+        'svcEngtMonsTypeCd',  # 서비스약정개월유형코드
+        'supportType',     # 지원유형
+    ]
+    
+    # PC 전용 파라미터 제거
+    for param in pc_only_params:
+        if param in query_params:
+            del query_params[param]
+    
+    # 새 쿼리 문자열 생성 (각 파라미터의 첫 번째 값만 사용)
+    new_query = urlencode({k: v[0] for k, v in query_params.items()}) if query_params else ''
+    
+    # 새 URL 생성
+    new_url = urlunparse((
+        parsed.scheme,
+        'm.shop.kt.com:444',
+        '/m' + parsed.path,
+        parsed.params,
+        new_query,
+        parsed.fragment
+    ))
+    
+    return new_url
+
+
+def to_mproduct_url(url: str) -> str:
+    """
+    KT Product PC URL을 모바일(https://m.product.kt.com) 형태로 변환
+    
+    모바일에서 지원하지 않는 PC 전용 쿼리 파라미터를 제거합니다:
+    - filter_code / filterCode: 필터 코드 (모바일 미지원)
+    """
+    if not url or not url.startswith('http'):
+        return ''
+    
+    # product.kt.com이 아닌 URL은 단순 반환
+    if 'product.kt.com' not in url:
+        return url
+    
+    # URL 파싱
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query, keep_blank_values=True)
+    
+    # 모바일에서 지원하지 않는 PC 전용 파라미터 목록
+    # filter_code (underscore)와 filterCode (camelCase) 둘 다 처리
+    pc_only_params = [
+        'filter_code',     # 필터 코드 (underscore)
+        'filterCode',      # 필터 코드 (camelCase)
+    ]
+    
+    # PC 전용 파라미터 제거
+    for param in pc_only_params:
+        if param in query_params:
+            del query_params[param]
+    
+    # 새 쿼리 문자열 생성 (각 파라미터의 첫 번째 값만 사용)
+    new_query = urlencode({k: v[0] for k, v in query_params.items()}) if query_params else ''
+    
+    # 모바일 도메인 및 경로 변환
+    mobile_netloc = 'm.product.kt.com'
+    mobile_path = parsed.path.replace('/wDic/', '/mDic/')
+    
+    # 새 URL 생성
+    new_url = urlunparse((
+        parsed.scheme,
+        mobile_netloc,
+        mobile_path,
+        parsed.params,
+        new_query,
+        parsed.fragment
+    ))
+    
+    return new_url
 
 
 def to_mglobalroaming_url(url: str) -> str:
