@@ -278,12 +278,30 @@ class RAGCrawlingService:
             if result.get("error"):
                 processed.append(result)
                 continue
+            
             markdown = (result.get("markdown") or "").strip()
+            html_content = result.get("html_content", "")
+            
+            # preprocess_markdown MCP 도구를 사용하여 마크다운 전처리
+            try:
+                preprocess_result = await crawler_tools.preprocess_markdown(
+                    markdown_text=markdown,
+                    html_content=html_content,
+                )
+                if preprocess_result.get("success"):
+                    processed_markdown = preprocess_result.get("processed_text", markdown)
+                else:
+                    logger.warning(f"전처리 실패, 원본 사용: {result['url']}")
+                    processed_markdown = markdown
+            except Exception as exc:
+                logger.warning(f"전처리 오류, 원본 사용: {result['url']} - {exc}")
+                processed_markdown = markdown
+            
             processed.append({
                 **result,
-                "processed_markdown": markdown,
+                "processed_markdown": processed_markdown,
                 "processed_at": datetime.now().isoformat(),
-                "text_length": len(markdown),
+                "text_length": len(processed_markdown),
             })
         return processed
 
@@ -321,18 +339,19 @@ class RAGCrawlingService:
                 
             menu = url_menu_map.get(result["url"])
             hierarchy, title = await self._resolve_hierarchy_and_title(result, menu)
-            markdown_content = result.get("processed_markdown", "")
+            processed_text = result.get("processed_markdown", "")
             html_content = result.get("html_content", "")
             mobile_url = menu.mobile_url if menu and menu.mobile_url else None
 
             try:
-                json_payload = await crawler_tools.convert_to_json(
+                # convert_to_rag_json_v2 사용 (daily_crawling_service와 동일한 JSON 구조)
+                json_payload = await crawler_tools.convert_to_rag_json_v2(
                     url=result["url"],
                     title=title,
-                    markdown_content=markdown_content,
+                    processed_text=processed_text,
                     html_content=html_content,
                     hierarchy=hierarchy,
-                    mobile_url=mobile_url,
+                    murl=mobile_url,
                     startdate=JSON_START_DATE,
                     enddate=JSON_END_DATE,
                 )
@@ -344,7 +363,7 @@ class RAGCrawlingService:
                         mobile_url,
                         title,
                         hierarchy,
-                        markdown_content,
+                        processed_text,
                     )
             except Exception as exc:  # pragma: no cover
                 logger.error("JSON 변환 실패 %s: %s", result["url"], exc)
@@ -353,63 +372,49 @@ class RAGCrawlingService:
                     mobile_url,
                     title,
                     hierarchy,
-                    markdown_content,
+                    processed_text,
                     error=str(exc),
                 )
-
-            metadata = json_data.setdefault("metadata", {})
-            metadata.update(await self._build_media_metadata(html_content, result["url"]))
-            # source 필드는 원본 HTML/메뉴 정보 추적용 메타데이터 (전환 후 검토 가능)
-            json_data["source"] = {
-                "title": result.get("title"),
-                "menu_path": menu.menu_path if menu else None,
-            }
             
             json_results.append(json_data)
             
         return json_results
             
     async def _resolve_hierarchy_and_title(self, result: Dict[str, Any], menu: Optional[MenuLink]) -> Tuple[List[str], str]:
+        """
+        HTML에서 직접 hierarchy와 title을 추출합니다.
+        extract_kt_page_info MCP 도구를 사용하여 og:title과 breadcrumb에서 추출합니다.
+        """
+        html_content = result.get("html_content", "")
+        
+        # extract_kt_page_info MCP 도구로 HTML에서 직접 추출
+        if html_content:
+            try:
+                page_info = await crawler_tools.extract_kt_page_info(html_content)
+                if page_info.get("success"):
+                    hierarchy = page_info.get("hierarchy", [])
+                    title = page_info.get("title", "")
+                    
+                    # title이 비어있으면 hierarchy의 마지막 항목 또는 fallback 사용
+                    if not title:
+                        if hierarchy:
+                            title = hierarchy[-1]
+                        else:
+                            title = result.get("title") or "제목 없음"
+                    
+                    return hierarchy, title
+            except Exception as exc:
+                logger.warning(f"extract_kt_page_info 실패: {exc}")
+        
+        # fallback: DB 메뉴 정보 사용 (있는 경우)
         if menu:
             hierarchy = [segment.strip() for segment in menu.menu_path.split(MENU_PATH_DELIMITER) if segment.strip()]
             title = hierarchy[-1] if hierarchy else (result.get("title") or "제목 없음")
             return hierarchy, title
 
-        meta_title = await self._extract_meta_title(result.get("html_content", ""))
-        if meta_title:
-            return [], meta_title
-
+        # 최종 fallback
         fallback_title = result.get("title") or "제목 없음"
         return [], fallback_title
-
-    async def _extract_meta_title(self, html_content: str) -> Optional[str]:
-        if not html_content:
-            return None
-        try:
-            meta_result = await crawler_tools.extract_meta_title(html_content)
-            if meta_result.get("success") and meta_result.get("title"):
-                return meta_result.get("title")
-        except Exception as exc:  # pragma: no cover
-            logger.warning("Meta title 추출 실패: %s", exc)
-        return None
-
-    async def _build_media_metadata(self, html_content: str, base_url: str) -> Dict[str, Any]:
-        if not html_content:
-            return {}
-        metadata: Dict[str, Any] = {}
-        try:
-            images = await crawler_tools.extract_images(html_content, base_url)
-            if images.get("success") and images.get("images"):
-                metadata["images"] = images.get("images", [])
-        except Exception as exc:  # pragma: no cover
-            logger.warning("이미지 메타데이터 추출 실패: %s", exc)
-        try:
-            links = await crawler_tools.extract_links(html_content, base_url)
-            if links.get("success") and links.get("links"):
-                metadata["links"] = [link for link in links.get("links", []) if link.get("url")]
-        except Exception as exc:  # pragma: no cover
-            logger.warning("링크 메타데이터 추출 실패: %s", exc)
-        return metadata
 
     def _build_fallback_json(
         self,

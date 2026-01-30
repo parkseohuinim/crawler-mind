@@ -61,6 +61,13 @@ class CrawlingResult(BaseModel):
     failed: Optional[int] = Field(None, description="Number of failed items")
     total: Optional[int] = Field(None, description="Total number of items")
     failed_items: Optional[List[FailedItem]] = Field(None, description="List of failed item details")
+    
+    model_config = {"extra": "ignore"}
+    
+    def model_dump(self, **kwargs):
+        """Override to exclude None values by default"""
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(**kwargs)
 
 class TaskResult(BaseModel):
     """Task result model"""

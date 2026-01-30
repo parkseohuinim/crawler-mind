@@ -63,6 +63,70 @@ class CrawlerToolsClient:
         )
         return self._normalize_result(result)
 
+    async def extract_kt_page_info(self, html_content: str) -> Dict[str, Any]:
+        """
+        KT 페이지의 HTML에서 title과 hierarchy를 추출합니다.
+        
+        Returns:
+            dict: {"success": bool, "title": str, "hierarchy": List[str]}
+        """
+        logger.debug("Calling extract_kt_page_info")
+        result = await mcp_service.call_tool(
+            "extract_kt_page_info",
+            {"html_content": html_content},
+        )
+        return self._normalize_result(result)
+
+    async def preprocess_markdown(
+        self,
+        markdown_text: str,
+        html_content: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        마크다운 텍스트를 전처리합니다. (일반 정보 처리)
+        
+        Returns:
+            dict: {"success": bool, "processed_text": str, ...}
+        """
+        logger.debug("Calling preprocess_markdown")
+        payload = {"markdown_text": markdown_text}
+        if html_content is not None:
+            payload["html_content"] = html_content
+        result = await mcp_service.call_tool("preprocess_markdown", payload)
+        return self._normalize_result(result)
+
+    async def convert_to_rag_json_v2(
+        self,
+        *,
+        url: str,
+        title: str,
+        processed_text: str,
+        html_content: str,
+        hierarchy: Optional[List[str]] = None,
+        murl: Optional[str] = None,
+        startdate: str = "1900-01-01",
+        enddate: str = "2999-12-31",
+    ) -> Dict[str, Any]:
+        """
+        RAG용 JSON 포맷 변환 (v2): daily_crawling_service와 동일한 JSON 구조 생성
+        
+        Returns:
+            dict: {"success": bool, "json_data": dict, ...}
+        """
+        logger.debug("Calling convert_to_rag_json_v2 for %s", url)
+        payload = {
+            "url": url,
+            "title": title,
+            "processed_text": processed_text,
+            "html_content": html_content,
+            "hierarchy": hierarchy,
+            "murl": murl,
+            "startdate": startdate,
+            "enddate": enddate,
+        }
+        result = await mcp_service.call_tool("convert_to_rag_json_v2", payload)
+        return self._normalize_result(result)
+
     def _normalize_result(self, result: Any) -> Dict[str, Any]:
         if hasattr(result, "structured_content"):
             return result.structured_content

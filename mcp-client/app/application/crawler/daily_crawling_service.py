@@ -721,34 +721,57 @@ class DailyCrawlingService:
         document_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        전처리된 결과를 최종 JSON 포맷으로 변환
-        data_*.json 형식에 맞춤
+        전처리된 크롤링 결과를 최종 JSON 포맷으로 변환합니다.
+        
+        data_YYYY-MM-DD_HHMMSS.json 파일에 저장될 형식으로 변환합니다.
+        유니코드 정규화, 메타데이터 추출 등을 수행합니다.
+        
+        출력 JSON 구조:
+            {
+                "docId": "ktcom_1234",
+                "url": "https://...",
+                "murl": "https://m...",
+                "hierarchy": ["홈", "요금", "5G"],
+                "title": "문서 제목",
+                "text": "본문 텍스트...",
+                "startdate": "1900-01-01",
+                "enddate": "2999-12-31",
+                "metadata": { "images": [...], "urls": [...] },
+                "status": "new"
+            }
         
         Args:
-            processed_result: 전처리된 결과
-            input_url: InputUrl 엔티티
-            document_id: menu_links에서 획득한 document_id
+            processed_result: 전처리된 크롤링 결과 딕셔너리
+                - url, mobile_url, processed_text, html_content 등 포함
+            input_url: InputUrl 엔티티 (menu_path, hierarchy 정보 포함)
+            document_id: menu_links 테이블에서 획득한 document_id (선택적)
             
         Returns:
-            JSON 포맷 딕셔너리
+            Dict[str, Any]: 최종 JSON 포맷 딕셔너리
         """
+        # --------------------------------------------------------
+        # 기본 필드 추출
+        # --------------------------------------------------------
         url = processed_result.get("url", "")
         mobile_url = processed_result.get("mobile_url") or input_url.mobile_url or ""
         processed_text = processed_result.get("processed_text", "")
         html_content = processed_result.get("html_content", "")
         hierarchy = processed_result.get("hierarchy", []) or input_url.get_hierarchy_list()
         
-        # title 결정
-        # 1. 핸들러 데이터인 경우: 핸들러에서 추출한 title 우선 사용
-        # 2. 일반 데이터: menu_path의 ^ 기준 마지막 값 사용
+        # --------------------------------------------------------
+        # title 결정 (우선순위)
+        # 1. 핸들러 데이터: 핸들러에서 추출한 개별 title 사용
+        # 2. 일반 데이터: menu_path의 ^ 구분자 기준 마지막 값
+        # 3. fallback: "제목 없음"
+        # --------------------------------------------------------
         title = ""
         
         if processed_result.get("is_handler_data"):
-            # 핸들러에서 추출한 개별 title 사용
+            # 핸들러에서 추출한 개별 title 사용 (상품명, 공지 제목 등)
             title = processed_result.get("title") or ""
         
         if not title and input_url.menu_path:
-            # menu_path의 마지막 값 사용
+            # menu_path 예: "홈^요금^5G 요금제" → "5G 요금제"
             menu_parts = input_url.menu_path.split("^")
             title = menu_parts[-1].strip() if menu_parts else ""
         
@@ -756,33 +779,46 @@ class DailyCrawlingService:
         if not title:
             title = processed_result.get("title") or "제목 없음"
         
-        # 유니코드 정규화
+        # --------------------------------------------------------
+        # 유니코드 정규화 (NFC)
+        # 한글 자모 분리 문제 방지 (ㄱ+ㅏ → 가)
+        # --------------------------------------------------------
         title = unicodedata.normalize('NFC', title)
         url = unicodedata.normalize('NFC', url)
         processed_text = unicodedata.normalize('NFC', processed_text)
         
-        # 개행문자를 \\n으로 변환
+        # --------------------------------------------------------
+        # 개행문자 이스케이프
+        # JSON 저장 시 실제 개행이 아닌 문자열 "\n"으로 저장
+        # --------------------------------------------------------
         final_text = processed_text.replace("\n", "\\n")
         
+        # --------------------------------------------------------
         # hierarchy 정규화
+        # 빈 항목 제거 및 유니코드 정규화
+        # --------------------------------------------------------
         normalized_hierarchy = None
         if hierarchy:
             normalized_hierarchy = [
                 unicodedata.normalize('NFC', item) 
                 for item in hierarchy 
-                if item
+                if item  # 빈 문자열 제외
             ]
         
-        # 메타데이터 추출
+        # --------------------------------------------------------
+        # 메타데이터 추출 (이미지, 링크)
+        # --------------------------------------------------------
         metadata = self._extract_metadata(html_content, url)
         
-        # recommendations 필드 추가 (상품 페이지에서 사용)
+        # recommendations 필드 추가 (상품 페이지용)
         if "recommendations" in processed_result:
             recommendations = processed_result.get("recommendations")
             if recommendations:  # 빈 리스트가 아닌 경우에만 추가
                 metadata["recommendations"] = recommendations
         
-        # 최종 JSON 구조
+        # --------------------------------------------------------
+        # 최종 JSON 구조 생성
+        # --------------------------------------------------------
         json_data = {
             "docId": document_id or "",
             "url": url,
@@ -790,8 +826,8 @@ class DailyCrawlingService:
             "hierarchy": normalized_hierarchy or [],
             "title": title,
             "text": final_text,
-            "startdate": JSON_START_DATE,
-            "enddate": JSON_END_DATE,
+            "startdate": JSON_START_DATE,  # "1900-01-01" - 항상 유효
+            "enddate": JSON_END_DATE,      # "2999-12-31" - 항상 유효
             "metadata": metadata,
             "status": "new",
         }
@@ -803,7 +839,25 @@ class DailyCrawlingService:
         html_content: str, 
         base_url: str
     ) -> Dict[str, Any]:
-        """HTML에서 메타데이터 추출 (이미지, 링크 등)"""
+        """
+        HTML 콘텐츠에서 메타데이터(이미지, 링크)를 추출합니다.
+        
+        검색 결과 표시 시 추가 정보로 활용됩니다.
+        헤더/푸터 영역의 요소는 제외됩니다.
+        
+        추출 항목:
+            - images: alt 텍스트가 있는 이미지 목록
+            - urls: 텍스트가 있는 링크 목록
+        
+        Args:
+            html_content: 원본 HTML 문자열
+            base_url: 상대 경로를 절대 경로로 변환할 기준 URL
+        
+        Returns:
+            Dict[str, Any]: 메타데이터 딕셔너리
+                - images: [{"alt": "설명", "src": "URL"}, ...]
+                - urls: [{"desc": "링크텍스트", "url": "URL"}, ...]
+        """
         metadata: Dict[str, Any] = {}
         
         if not html_content:
@@ -815,36 +869,56 @@ class DailyCrawlingService:
             
             soup = BeautifulSoup(html_content, 'html.parser')
             
+            # --------------------------------------------------------
             # 이미지 추출
+            # - 헤더/푸터 내 이미지 제외 (로고, 네비게이션 아이콘 등)
+            # - alt 텍스트가 2자 이상인 이미지만 포함
+            # --------------------------------------------------------
             images = []
             for img in soup.find_all('img'):
+                # KT 공통 프레임워크 헤더/푸터 내 이미지 제외
                 if img.find_parent(id=['cfmClHeader', 'cfmClFooter']):
                     continue
+                
                 alt_text = (img.get('alt') or '').strip()
                 if len(alt_text) > 2:
                     src = img.get('src', '')
+                    # 상대 경로 → 절대 경로 변환
                     if src and not src.startswith('http'):
                         src = urljoin(base_url, src)
                     images.append({'alt': alt_text, 'src': src})
+            
             if images:
                 metadata['images'] = images
             
+            # --------------------------------------------------------
             # 링크 추출
+            # - 헤더/푸터 내 링크 제외
+            # - 텍스트가 2자 이상인 링크만 포함
+            # - http, https, 상대경로(/) 링크만 포함
+            # --------------------------------------------------------
             urls_data = []
             for link in soup.find_all('a', href=True):
+                # 헤더/푸터 내 링크 제외
                 if link.find_parent(id=['cfmClHeader', 'cfmClFooter']):
                     continue
+                
                 link_text = link.get_text().strip()
                 if len(link_text) < 2:
                     continue
+                
                 href = link.get('href')
                 if href.startswith('http') or href.startswith('/'):
+                    # 상대 경로 → 절대 경로 변환
                     if href.startswith('/'):
                         href = urljoin(base_url, href)
                     urls_data.append({'desc': link_text, 'url': href})
             
             if urls_data:
-                # 중복 제거
+                # --------------------------------------------------------
+                # URL 중복 제거
+                # 같은 URL이 여러 번 등장할 수 있음
+                # --------------------------------------------------------
                 seen = set()
                 unique_urls = []
                 for item in urls_data:
@@ -854,7 +928,7 @@ class DailyCrawlingService:
                 metadata['urls'] = unique_urls
                 
         except Exception as e:
-            logger.warning(f"⚠️ Metadata extraction failed: {e}")
+            logger.warning(f"[_extract_metadata] Error: {e}")
         
         return metadata
     
@@ -1196,23 +1270,41 @@ class DailyCrawlingService:
     
     def _apply_similarity_analysis(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        결과 리스트에 유사도 분석을 적용하여 중복 항목을 삭제
+        결과 리스트에 TF-IDF 기반 유사도 분석을 적용하여 중복 항목을 삭제합니다.
         
-        원본/중복 결정 기준:
-        1. hierarchy depth가 더 깊은 것(하위) → 원본 유지
-        2. depth가 같으면 docId 숫자가 더 작은 것 → 원본 유지
+        크롤링 결과 중 텍스트 내용이 유사한 항목들을 감지하고,
+        정해진 기준에 따라 원본을 유지하고 중복을 제거합니다.
+        
+        원본/중복 결정 기준 (우선순위):
+            1. hierarchy depth가 더 깊은 것(하위 메뉴) → 원본 유지
+               (하위 메뉴가 더 구체적인 정보를 담고 있다고 판단)
+            2. depth가 같으면 docId 숫자가 더 작은 것 → 원본 유지
+               (먼저 생성된 문서가 원본일 가능성이 높음)
+        
+        처리 단계:
+            1. 유효한 텍스트/URL 추출 (빈 값 제외)
+            2. TextSimilarityAnalyzer로 중복 쌍 탐지 (임계값: 0.95)
+            3. 각 중복 쌍에서 원본/중복 결정
+            4. 중복 항목 삭제 (역순으로 삭제하여 인덱스 유지)
         
         Args:
-            results: JSON 결과 리스트
+            results: 크롤링 결과 딕셔너리 리스트
+                    각 항목에 "text", "url", "hierarchy", "docId" 포함
             
         Returns:
-            중복이 삭제된 결과 리스트
+            List[Dict[str, Any]]: 중복이 제거된 결과 리스트
         """
+        # --------------------------------------------------------
+        # 입력 검증: 최소 2개 이상 필요
+        # --------------------------------------------------------
         if len(results) < 2:
             return results
         
         try:
-            # 유효한 텍스트와 URL 추출 (인덱스 유지)
+            # --------------------------------------------------------
+            # 1단계: 유효한 텍스트와 URL 추출
+            # 빈 텍스트나 URL이 없는 항목은 유사도 분석에서 제외
+            # --------------------------------------------------------
             valid_indices = []
             texts = []
             urls = []
@@ -1228,14 +1320,20 @@ class DailyCrawlingService:
             if len(texts) < 2:
                 return results
             
-            # 유사도 분석 실행 (임계값 0.95)
+            # --------------------------------------------------------
+            # 2단계: 유사도 분석 실행
+            # 임계값 0.95 = 95% 이상 유사하면 중복으로 판정
+            # --------------------------------------------------------
             analyzer = TextSimilarityAnalyzer(threshold=0.95)
             duplicates, dup_map = analyzer.find_duplicates(texts, urls)
             
             if not duplicates:
                 return results
             
-            # 삭제할 인덱스 수집
+            # --------------------------------------------------------
+            # 3단계: 삭제할 인덱스 수집
+            # 각 중복 쌍에서 원본/중복을 결정하고 중복 인덱스 수집
+            # --------------------------------------------------------
             indices_to_remove = set()
             
             for dup_info in duplicates:
@@ -1243,12 +1341,13 @@ class DailyCrawlingService:
                 idx_a = valid_indices[dup_info.original_idx]
                 idx_b = valid_indices[dup_info.duplicate_idx]
                 
-                # 원본/중복 결정: hierarchy depth가 깊은 것이 원본, 같으면 docId가 작은 것이 원본
+                # 원본/중복 결정 (hierarchy depth, docId 기준)
                 original_idx, duplicate_idx = self._determine_original_and_duplicate(
                     results[idx_a], results[idx_b], idx_a, idx_b
                 )
                 
                 # 이미 삭제 대상인 항목이 원본으로 선택된 경우 스킵
+                # (연쇄 중복에서 발생 가능)
                 if original_idx in indices_to_remove:
                     continue
                 
@@ -1256,21 +1355,24 @@ class DailyCrawlingService:
                 
                 original_url = results[original_idx].get("url", "")
                 duplicate_url = results[duplicate_idx].get("url", "")
-                logger.info(
-                    f"중복 삭제 예정: {duplicate_url} (원본: {original_url}, "
-                    f"유사도: {dup_info.similarity_score:.4f})"
+                logger.debug(
+                    f"[_apply_similarity_analysis] Duplicate: {duplicate_url} "
+                    f"(original: {original_url}, score: {dup_info.similarity_score:.4f})"
                 )
             
-            # 중복 항목 삭제 (인덱스 역순으로 삭제해야 인덱스가 밀리지 않음)
+            # --------------------------------------------------------
+            # 4단계: 중복 항목 삭제
+            # 역순으로 삭제해야 앞쪽 인덱스가 밀리지 않음
+            # --------------------------------------------------------
             for idx in sorted(indices_to_remove, reverse=True):
                 del results[idx]
             
-            logger.info(f"📊 중복 {len(indices_to_remove)}개 삭제 완료")
+            logger.info(f"[_apply_similarity_analysis] Removed {len(indices_to_remove)} duplicates")
             
             return results
             
         except Exception as e:
-            logger.warning(f"유사도 분석 중 오류 발생: {e}")
+            logger.warning(f"[_apply_similarity_analysis] Error: {e}")
             return results
     
     def _determine_original_and_duplicate(
@@ -1281,16 +1383,29 @@ class DailyCrawlingService:
         idx_b: int
     ) -> tuple:
         """
-        두 중복 항목 중 원본과 중복을 결정
+        두 중복 항목 중 원본과 중복을 결정합니다.
         
-        기준:
-        1. hierarchy depth가 더 깊은 것(하위) → 원본
-        2. depth가 같으면 docId 숫자가 더 작은 것 → 원본
+        원본 선택 기준 (우선순위):
+            1. hierarchy depth가 더 깊은 것 → 원본
+               - 하위 메뉴가 더 구체적인 정보를 담고 있음
+               - 예: ["홈", "요금"] vs ["홈", "요금", "5G"] → 후자가 원본
+            2. depth가 같으면 docId 숫자가 더 작은 것 → 원본
+               - 먼저 생성된 문서가 원본일 가능성 높음
+               - 예: "ktcom_100" vs "ktcom_200" → 전자가 원본
+        
+        Args:
+            item_a: 첫 번째 항목 딕셔너리
+            item_b: 두 번째 항목 딕셔너리
+            idx_a: 첫 번째 항목의 results 리스트 인덱스
+            idx_b: 두 번째 항목의 results 리스트 인덱스
         
         Returns:
-            (original_idx, duplicate_idx)
+            tuple: (original_idx, duplicate_idx) - 원본 인덱스, 중복 인덱스
         """
-        # hierarchy depth 비교
+        # --------------------------------------------------------
+        # 1차 기준: hierarchy depth 비교
+        # depth가 깊을수록 하위 메뉴 = 더 구체적인 정보
+        # --------------------------------------------------------
         depth_a = len(item_a.get("hierarchy", []))
         depth_b = len(item_b.get("hierarchy", []))
         
@@ -1301,7 +1416,10 @@ class DailyCrawlingService:
             else:
                 return idx_b, idx_a
         
-        # depth가 같으면 docId 숫자 비교
+        # --------------------------------------------------------
+        # 2차 기준: docId 숫자 비교
+        # docId가 작을수록 먼저 생성된 문서
+        # --------------------------------------------------------
         docid_a = item_a.get("docId", "")
         docid_b = item_b.get("docId", "")
         
@@ -1316,19 +1434,46 @@ class DailyCrawlingService:
     
     def _extract_docid_number(self, docid: str) -> int:
         """
-        docId에서 숫자 부분 추출
-        예: "ktcom_1764" -> 1764
+        docId 문자열에서 숫자 부분을 추출합니다.
+        
+        docId는 일반적으로 "prefix_숫자" 형태입니다.
+        문자열 끝의 연속된 숫자를 추출합니다.
+        
+        Args:
+            docid: docId 문자열 (예: "ktcom_1764", "doc_abc_123")
+        
+        Returns:
+            int: 추출된 숫자
+                 - docId가 없거나 숫자가 없으면 inf 반환
+                 - inf를 반환하면 비교 시 항상 후순위로 처리됨
+        
+        Example:
+            >>> self._extract_docid_number("ktcom_1764")
+            1764
+            >>> self._extract_docid_number("doc_abc")
+            inf
         """
         if not docid:
             return float('inf')  # docId가 없으면 가장 큰 값으로 처리
         
+        # 문자열 끝의 연속된 숫자 추출
         match = re.search(r'(\d+)$', docid)
         if match:
             return int(match.group(1))
         return float('inf')
     
     async def _send_update(self, task_id: str, update_type: str, data: Dict[str, Any]) -> None:
-        """SSE 업데이트 전송"""
+        """
+        SSE(Server-Sent Events) 업데이트를 전송합니다.
+        
+        실시간 진행 상황을 클라이언트에 전달하기 위해 사용합니다.
+        태스크별 큐에 JSON 메시지를 추가하면, 클라이언트가 이를 수신합니다.
+        
+        Args:
+            task_id: 태스크 고유 ID
+            update_type: 업데이트 유형 (예: "progress", "complete", "error")
+            data: 전송할 데이터 딕셔너리
+        """
         if task_id in self.task_streams:
             message = json.dumps({"type": update_type, "data": data})
             await self.task_streams[task_id].put(message)
