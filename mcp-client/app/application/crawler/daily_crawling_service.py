@@ -826,8 +826,8 @@ class DailyCrawlingService:
             "hierarchy": normalized_hierarchy or [],
             "title": title,
             "text": final_text,
-            "startdate": JSON_START_DATE,  # "1900-01-01" - 항상 유효
-            "enddate": JSON_END_DATE,      # "2999-12-31" - 항상 유효
+            "startdate": processed_result.get("startdate") or JSON_START_DATE,
+            "enddate": processed_result.get("enddate") or JSON_END_DATE,
             "metadata": metadata,
             "status": "new",
         }
@@ -1027,6 +1027,12 @@ class DailyCrawlingService:
                                 "hierarchy": data_hierarchy,
                                 "is_handler_data": True,  # 핸들러 데이터 표시
                             }
+                            
+                            # startdate/enddate 필드 포함 (있는 경우)
+                            if data.get("startdate"):
+                                single_result["startdate"] = data["startdate"]
+                            if data.get("enddate"):
+                                single_result["enddate"] = data["enddate"]
                             
                             # recommendations 필드 포함 (있는 경우)
                             if "recommendations" in data:
