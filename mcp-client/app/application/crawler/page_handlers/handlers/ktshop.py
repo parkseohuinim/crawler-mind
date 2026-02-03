@@ -466,56 +466,96 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                                 
                                 logger.info(f"🔍 OCR processing: {img_url}")
                                 
-                                # 이미지 다운로드 및 base64 인코딩
+                                # 이미지 다운로드
+                                from PIL import Image
+                                from io import BytesIO
+                                
                                 img_response = requests.get(img_url, timeout=90)
-                                image_data = base64.b64encode(img_response.content).decode('utf-8')
                                 
-                                # GPT-4V로 OCR 수행
-                                api_response = openai_client.chat.completions.create(
-                                    model="gpt-4o",
-                                    messages=[
-                                        {
-                                            "role": "system",
-                                            "content": """You are a LITERAL OCR transcription machine. Your ONLY job is to copy text EXACTLY as shown - like a photocopier.
-
-ABSOLUTE RULES - NO EXCEPTIONS:
-1. NUMBERS: Copy digit-by-digit. If you see "17.4", write "17.4" NOT "17.0" or "17.42"
-2. WORDS: Copy letter-by-letter. If you see "열간 단조", write "열간 단조" NOT "얇은" or translation
-3. SPACING: Preserve exact spaces, tabs, and line breaks as shown
-4. SYMBOLS: Copy all punctuation, special characters exactly: |, -, ., etc.
-5. NO INTERPRETATION: Do not correct, translate, summarize, or modify ANYTHING
-6. NO REFUSAL: Never say "I'm sorry" or refuse - just transcribe what you see
-7. LAYOUT: Keep visual structure - if text is side-by-side, keep it side-by-side
-8. FORMAT: Use plain text or markdown only for structure (tables/lists), never change the actual text content
-
-EXAMPLES OF WHAT NOT TO DO:
-❌ Changing "17.4cm" to "17.0cm" 
-❌ Changing "열간 단조" to "얇은"
-❌ Removing spaces or adding pipes "|" where there are spaces
-❌ Saying "I'm sorry, I can't assist with that"
-❌ Translating, interpreting, or "fixing" anything
-
-WHAT TO DO:
-✅ Type EXACTLY what you see, character by character
-✅ If text says "17.4cm iPhone 17 Pro", write exactly "17.4cm iPhone 17 Pro"
-✅ Preserve all original spacing and layout
-✅ Copy errors, typos, and unusual formatting as-is
-
-You are a DUMB COPIER. Do not think. Do not interpret. Just COPY."""
-                                        },
-                                        {
-                                            "role": "user",
-                                            "content": [
-                                                {"type": "text", "text": "Copy ALL text from this image EXACTLY as shown. Do not change numbers, words, spacing, or formatting. Type what you see character-by-character like a photocopier. No interpretation, no correction, no translation."},
-                                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
-                                            ]
-                                        }
-                                    ],
-                                    max_tokens=4000,
-                                    temperature=0.0
-                                )
+                                # PIL Image로 변환하여 크기 확인
+                                image = Image.open(BytesIO(img_response.content))
+                                width, height = image.size
                                 
-                                ocr_text = api_response.choices[0].message.content.strip()
+                                # 1000px 단위로 분할
+                                chunk_height = 1000
+                                image_chunks = []
+                                
+                                if height > chunk_height:
+                                    logger.info(f"📐 Image size: {width}x{height}px, splitting into chunks...")
+                                    for y in range(0, height, chunk_height):
+                                        box = (0, y, width, min(y + chunk_height, height))
+                                        chunk = image.crop(box)
+                                        
+                                        buffer = BytesIO()
+                                        chunk.save(buffer, format='JPEG', quality=95)
+                                        chunk_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                                        image_chunks.append(chunk_base64)
+                                    logger.info(f"📐 Split into {len(image_chunks)} chunks")
+                                else:
+                                    # 1000px 이하면 그대로 사용
+                                    buffer = BytesIO()
+                                    image.save(buffer, format='JPEG', quality=95)
+                                    image_chunks.append(base64.b64encode(buffer.getvalue()).decode('utf-8'))
+                                
+                                # 각 청크에 대해 OCR 수행
+                                all_ocr_texts = []
+                                for chunk_idx, chunk_data in enumerate(image_chunks):
+                                    api_response = openai_client.chat.completions.create(
+                                        model="gpt-4o",
+                                        messages=[
+                                            {
+                                                "role": "system",
+                                                "content": """당신은 마케팅 이미지에서 텍스트를 추출하는 OCR 전문가입니다.
+
+## 작업 목적
+- 제품 홍보 페이지의 텍스트 정보를 추출하여 시각 장애인을 위한 접근성 서비스를 제공합니다.
+
+## 추출 규칙
+1. 이미지에 보이는 모든 텍스트(영어, 한글, 숫자, 특수문자)만 추출합니다.
+2. 텍스트의 순서와 구조를 최대한 유지합니다.
+3. 배경과 구분이 어려운 텍스트도 최선을 다해 인식합니다.
+
+## 중요 제한사항
+- 인물, 얼굴, 사람에 대해서는 절대 분석하거나 언급하지 마세요.
+- 이미지 속 사진이나 그래픽 요소는 무시하고 오직 텍스트만 추출하세요.
+- 텍스트가 없는 영역은 건너뛰세요.
+- 텍스트가 전혀 없다면 빈 문자열만 반환하세요.
+
+## 출력 형식
+- 마크다운 코드블록(```)이나 기타 포맷팅 없이 순수 텍스트만 반환하세요.
+- 추출한 텍스트를 있는 그대로 출력하세요."""
+                                            },
+                                            {
+                                                "role": "user",
+                                                "content": [
+                                                    {"type": "text", "text": f"[이미지 {chunk_idx + 1}/{len(image_chunks)}] 이 마케팅 이미지에서 보이는 텍스트만 추출해주세요. 사진이나 인물은 무시하고 글자만 읽어주세요."},
+                                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{chunk_data}"}}
+                                                ]
+                                            }
+                                        ],
+                                        max_tokens=5000,
+                                        temperature=0.0
+                                    )
+                                    chunk_text = api_response.choices[0].message.content.strip()
+                                    
+                                    # 마크다운 코드블록 제거
+                                    import re
+                                    chunk_text = re.sub(r'^```(?:plaintext|text|markdown)?\s*\n?', '', chunk_text)
+                                    chunk_text = re.sub(r'\n?```\s*$', '', chunk_text)
+                                    chunk_text = chunk_text.strip()
+                                    
+                                    # 거부 응답 필터링
+                                    refusal_phrases = ["I'm sorry", "I can't assist", "I cannot assist", "I'm unable to", "I cannot help"]
+                                    is_refusal = any(phrase.lower() in chunk_text.lower() for phrase in refusal_phrases)
+                                    
+                                    if is_refusal:
+                                        logger.info(f"⚠️ Chunk {chunk_idx + 1}/{len(image_chunks)} OCR: Refusal filtered")
+                                    elif chunk_text:
+                                        all_ocr_texts.append(chunk_text)
+                                        logger.info(f"✅ Chunk {chunk_idx + 1}/{len(image_chunks)} OCR: {len(chunk_text)} chars")
+                                
+                                # 전체 텍스트 합치기
+                                ocr_text = "\n".join(all_ocr_texts)
                                 
                                 if ocr_text and len(ocr_text) > 10:
                                     logger.info(f"✅ OCR: {len(ocr_text)} chars")
