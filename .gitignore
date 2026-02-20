@@ -248,5 +248,8 @@ package-lock.json
 helm/**/values-secrets.yaml
 **/values-secrets.yaml
 
+# Telegram
+telegram_bot.py
+
 # Result files
 *.json

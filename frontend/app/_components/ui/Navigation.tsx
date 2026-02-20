@@ -54,6 +54,12 @@ export default function Navigation() {
           >
             JSON 비교
           </Link>
+          <Link 
+            href="/result-editor" 
+            className={`nav-link ${pathname === '/result-editor' ? 'active' : ''}`}
+          >
+            결과 편집
+          </Link>
           {isDailyEnabled && (
             <Link 
               href="/daily-crawling" 
