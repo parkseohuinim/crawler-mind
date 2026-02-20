@@ -494,7 +494,6 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
                     menus.append({
                         "menu": final_menu,
                         "url": detail_url,
-                        "mobile_url": detail_url,
                         "murl": to_gigagenie_murl(detail_url),
                         "original_index": original_idx
                     })
@@ -519,7 +518,6 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
                     menus.append({
                         "menu": parent_menu,
                         "url": detail_url,
-                        "mobile_url": detail_url,
                         "murl": to_gigagenie_murl(detail_url),
                         "original_index": original_idx
                     })

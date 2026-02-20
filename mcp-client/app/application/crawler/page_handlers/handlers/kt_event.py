@@ -17,24 +17,154 @@ from ..handler_registry import register_page_handler
 logger = logging.getLogger(__name__)
 
 
-def _pc_to_mobile_url(pc_url: str) -> str:
-    """PC 이벤트 URL을 모바일 URL로 변환 (mblevtno = pcEvtNo + 1)"""
+def _normalize_title(title: str) -> str:
+    """제목 비교를 위한 정규화 (공백·특수문자 제거 후 소문자)"""
+    return re.sub(r'\s+', '', title).strip().lower()
+
+
+def _build_mobile_url(pc_url: str, mb_no: int) -> str:
+    """PC URL과 모바일 이벤트 번호로 모바일 URL 생성"""
+    mobile = pc_url.replace('https://event.kt.com', 'https://m.kt.com')
+    mobile = re.sub(r"pcEvtNo=\d+", f"mblevtno={mb_no}", mobile)
+    # pcEvtNo 파라미터가 없었던 경우 대비
+    if 'mblevtno=' not in mobile:
+        mobile += ('&' if '?' in mobile else '?') + f'mblevtno={mb_no}'
+    return mobile
+
+
+def _pc_to_mobile_url(pc_url: str, mobile_map: dict = None) -> str:
+    """
+    PC 이벤트 URL을 모바일 URL로 변환.
+    mobile_map이 있으면 pcEvtNo → mblevtno 매핑을 사용하고,
+    매핑에 없으면 빈 문자열을 반환한다.
+    mobile_map이 None이면 하위 호환을 위해 빈 문자열을 반환한다.
+    """
     if not pc_url:
         return ""
     m = re.search(r"pcEvtNo=(\d+)", pc_url)
     if not m:
-        mobile = pc_url.replace('https://event.kt.com', 'https://m.kt.com')
-        mobile = mobile.replace('pcEvtNo=', 'mblevtno=')
-        if 'past_event_view.html' in mobile and 'rows=' not in mobile:
-            mobile += ('&' if '?' in mobile else '?') + 'rows=10'
-        return mobile
-    pc_no = int(m.group(1))
-    mb_no = pc_no + 1
-    mobile = pc_url.replace('https://event.kt.com', 'https://m.kt.com')
-    mobile = re.sub(r"pcEvtNo=\d+", f"mblevtno={mb_no}", mobile)
-    if 'past_event_view.html' in mobile and 'rows=' not in mobile:
-        mobile += ('&' if '?' in mobile else '?') + 'rows=10'
-    return mobile
+        # pcEvtNo 파라미터 자체가 없는 URL → 단순 도메인 치환만
+        return pc_url.replace('https://event.kt.com', 'https://m.kt.com')
+    pc_no = m.group(1)  # 문자열 그대로 사용
+    if mobile_map is not None:
+        mb_no = mobile_map.get(pc_no)
+        if mb_no is None:
+            logger.warning(f"⚠️ 모바일 매핑 없음: pcEvtNo={pc_no} → murl을 빈 값으로 처리")
+            return ""
+        return _build_mobile_url(pc_url, int(mb_no))
+    # mobile_map이 없으면 안전하게 빈 값 반환
+    return ""
+
+
+async def _fetch_mobile_event_map() -> dict:
+    """
+    모바일 진행중인 이벤트 목록(m.kt.com)을 크롤링하여
+    {정규화된_제목: mblevtno} 매핑과 {pcEvtNo: mblevtno} 매핑을 반환.
+    
+    Returns:
+        dict: {
+            'by_title': {normalized_title: mblevtno, ...},
+            'by_pc_no': {pcEvtNo_str: mblevtno_str, ...}  # 제목 매칭 후 채워짐
+        }
+    """
+    logger.info("📱 모바일 이벤트 목록 크롤링 시작: https://m.kt.com/html/event/ongoing_event_list.html")
+    mobile_map = {'by_title': {}, 'by_pc_no': {}}
+    
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                viewport={'width': 375, 'height': 812},
+                user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+            )
+            page = await context.new_page()
+            
+            await page.goto(
+                'https://m.kt.com/html/event/ongoing_event_list.html',
+                wait_until='domcontentloaded',
+                timeout=30000
+            )
+            await page.wait_for_timeout(3000)
+            
+            # 더보기 버튼 반복 클릭하여 모든 이벤트 로드
+            for _ in range(20):  # 안전장치
+                more_btn = await page.query_selector('a.btn-more, button.btn-more, .more-btn, [class*="more"]')
+                if not more_btn:
+                    break
+                is_visible = await more_btn.is_visible()
+                if not is_visible:
+                    break
+                try:
+                    await more_btn.click()
+                    await page.wait_for_timeout(1500)
+                except Exception:
+                    break
+            
+            # 모바일 이벤트 추출
+            # 모바일 페이지 구조: <a data-mblevtno="..."><div class="event-txt"><p class="etitle">제목</p>...</div></a>
+            mobile_events = await page.evaluate("""() => {
+                const links = document.querySelectorAll('a[data-mblevtno]');
+                const events = [];
+                links.forEach(link => {
+                    const mblevtno = link.getAttribute('data-mblevtno');
+                    const titleEl = link.querySelector('.etitle, .title, .event-txt p');
+                    let title = '';
+                    if (titleEl) {
+                        title = titleEl.textContent.trim();
+                    } else {
+                        // fallback: img alt 텍스트 사용
+                        const img = link.querySelector('img');
+                        title = img ? (img.getAttribute('alt') || '').trim() : '';
+                    }
+                    if (mblevtno && title) {
+                        events.push({ mblevtno, title });
+                    }
+                });
+                return events;
+            }""")
+            
+            await browser.close()
+            
+            for evt in mobile_events:
+                normalized = _normalize_title(evt['title'])
+                mobile_map['by_title'][normalized] = evt['mblevtno']
+            
+            logger.info(f"📱 모바일 이벤트 {len(mobile_events)}개 수집 완료")
+    
+    except Exception as e:
+        logger.error(f"❌ 모바일 이벤트 목록 크롤링 실패: {str(e)}")
+    
+    return mobile_map
+
+
+def _match_pc_to_mobile(pc_events: list, mobile_map: dict) -> dict:
+    """
+    PC 이벤트 목록과 모바일 매핑을 제목 기준으로 매칭하여
+    {pcEvtNo: mblevtno} 딕셔너리를 반환.
+    
+    Args:
+        pc_events: [{'evt_no': '13778', 'title': '...', ...}, ...]
+        mobile_map: _fetch_mobile_event_map()의 반환값
+    
+    Returns:
+        dict: {pcEvtNo_str: mblevtno_str, ...}
+    """
+    pc_to_mobile = {}
+    by_title = mobile_map.get('by_title', {})
+    
+    for pc_evt in pc_events:
+        pc_no = pc_evt.get('evt_no', '')
+        pc_title = pc_evt.get('title', '')
+        normalized = _normalize_title(pc_title)
+        
+        if normalized in by_title:
+            mb_no = by_title[normalized]
+            pc_to_mobile[pc_no] = mb_no
+            logger.info(f"✅ 매핑 성공: pcEvtNo={pc_no} → mblevtno={mb_no} ('{pc_title}')")
+        else:
+            logger.warning(f"⚠️ 매핑 실패: pcEvtNo={pc_no} ('{pc_title}') → 모바일에서 일치하는 제목 없음")
+    
+    return pc_to_mobile
 
 
 def _parse_date_to_hyphen(s: str) -> str:
@@ -48,10 +178,15 @@ def _parse_date_to_hyphen(s: str) -> str:
 async def handle_kt_event_detail(
     url: str, 
     fclient: Any, 
-    menu: Optional[str] = None
+    menu: Optional[str] = None,
+    mobile_map: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """
     KT 이벤트 상세 페이지 핸들러
+    
+    Args:
+        mobile_map: {pcEvtNo: mblevtno} 매핑 딕셔너리. 
+                    None이면 murl을 빈 값으로 처리.
     """
     logger.info(f"KT Event detail processing started: {url}")
     
@@ -212,11 +347,11 @@ async def handle_kt_event_detail(
             else:
                 html_content += "<p>이벤트 상세 내용을 불러올 수 없습니다.</p>"
             
-            mobile_url = _pc_to_mobile_url(url)
+            mobile_url = _pc_to_mobile_url(url, mobile_map)
             
             await browser.close()
             
-            logger.info(f"✅ KT Event detail completed: '{event_info.get('title', 'unknown')}'")
+            logger.info(f"✅ KT Event detail completed: '{event_info.get('title', 'unknown')}' (murl={'있음' if mobile_url else '없음'})")
             
             return {
                 "datas": [{
@@ -315,6 +450,9 @@ async def handle_kt_event_main(
             all_events = []
             total_pages = pagination_info.get('total_pages', 1)
             
+            # 모바일 이벤트 목록 크롤링하여 매핑 테이블 구축
+            mobile_map_raw = await _fetch_mobile_event_map()
+            
             # 모든 페이지 순회
             for page_num in range(1, total_pages + 1):
                 if page_num > 1:
@@ -390,6 +528,10 @@ async def handle_kt_event_main(
             
             await browser.close()
             
+            # PC↔모바일 제목 기반 매핑 구축
+            pc_to_mobile = _match_pc_to_mobile(all_events, mobile_map_raw)
+            logger.info(f"📱 PC↔모바일 매핑 결과: {len(pc_to_mobile)}/{len(all_events)}건 매칭 성공")
+            
             # 각 이벤트의 상세 페이지 처리
             individual_posts = [entry_page_data]
             logger.info(f"🔍 Starting detail processing for {len(all_events)} events")
@@ -397,7 +539,7 @@ async def handle_kt_event_main(
             for i, event in enumerate(all_events, 1):
                 try:
                     detail_url = f"https://event.kt.com/html/event/ongoing_event_view.html?page=1&searchCtg=ALL&sort=&pcEvtNo={event['evt_no']}"
-                    detail_result = await handle_kt_event_detail(detail_url, fclient, menu)
+                    detail_result = await handle_kt_event_detail(detail_url, fclient, menu, mobile_map=pc_to_mobile)
                     
                     if detail_result and "datas" in detail_result and detail_result["datas"]:
                         individual_post = detail_result["datas"][0]
@@ -450,7 +592,7 @@ async def handle_kt_event_main(
             menus = [{
                 "menu": menu or "KT 이벤트",
                 "url": url,
-                "mobile_url": url.replace('https://event.kt.com', 'https://m.kt.com')
+                "murl": url.replace('https://event.kt.com', 'https://m.kt.com')
             }]
             
             for event in all_events:
@@ -458,7 +600,7 @@ async def handle_kt_event_main(
                 menus.append({
                     "menu": f"{menu}^{event['title']}" if menu else event['title'],
                     "url": view_url,
-                    "mobile_url": _pc_to_mobile_url(view_url)
+                    "murl": _pc_to_mobile_url(view_url, pc_to_mobile)
                 })
             
             logger.info(f"✅ KT Event main completed: {len(all_events)} events")

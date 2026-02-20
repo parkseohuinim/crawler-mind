@@ -1016,7 +1016,7 @@ class DailyCrawlingService:
                             
                             # URL 정보: menus에서 우선, 없으면 data에서
                             data_url = menu_info.get("url") or data.get("url") or input_url.pc_url
-                            data_murl = menu_info.get("mobile_url") or self._pc_to_mobile_url(data_url)
+                            data_murl = menu_info.get("murl") or menu_info.get("mobile_url") or self._pc_to_mobile_url(data_url)
                             
                             single_result = {
                                 "url": data_url,
