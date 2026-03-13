@@ -29,16 +29,21 @@ async def _fetch_notice_metadata(page, url: str, attempt: int) -> Optional[Dict[
     status_code = response.status if response else None
     if status_code and status_code >= 400:
         logger.error(f"❌ HTTP {status_code}: {url}")
-    try:
-        await page.wait_for_selector('h1.title, .txt-content', timeout=10000)
-        logger.info("✅ Notice content loaded")
-    except Exception as e:
-        logger.warning(f"⚠️ Content not loaded (attempt {attempt+1}): {e}")
+    notice_selectors = ['h1.title', '.txt-content', '.desc', '.notice-content', '.content', 'article']
+    for sel in notice_selectors:
+        try:
+            await page.wait_for_selector(sel, timeout=12000)
+            logger.info("✅ Notice content loaded")
+            break
+        except Exception:
+            continue
+    else:
+        logger.warning(f"⚠️ Content not loaded (attempt {attempt+1}): all selectors failed")
     await page.wait_for_timeout(2000)
     return await page.evaluate("""() => {
-        const title = document.querySelector('h1.title');
-        const dateElement = document.querySelector('.desc');
-        const contentDiv = document.querySelector('.txt-content');
+        const title = document.querySelector('h1.title') || document.querySelector('h1') || document.querySelector('.title');
+        const dateElement = document.querySelector('.desc') || document.querySelector('.date') || document.querySelector('.info-date') || document.querySelector('[class*="date"]');
+        const contentDiv = document.querySelector('.txt-content') || document.querySelector('.content') || document.querySelector('.notice-content') || document.querySelector('article') || document.querySelector('.desc')?.nextElementSibling;
         let nextLink = '';
         const nextElement = document.querySelector('a[data-bno].next-area');
         if (nextElement) {
@@ -396,6 +401,25 @@ async def handle_kt_notice_main(
 register_page_handler(
     r'https?://inside\.kt\.com/html/notice/notice_list\.html',
     handle_kt_notice_main
+)
+
+
+async def handle_kt_notice_detail_page(
+    url: str,
+    fclient: Any,
+    menu: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    inside.kt.com/html/notice/notice_detail.html 단일 상세 페이지 핸들러.
+    재시도(failed_targets) 및 직접 URL 크롤링 시 사용.
+    """
+    cutoff_date = datetime.now() - timedelta(days=365)
+    return await handle_kt_notice_detail(url, fclient, cutoff_date=cutoff_date, context=None)
+
+
+register_page_handler(
+    r'https?://inside\.kt\.com/html/notice/notice_detail\.html\?bno=.*',
+    handle_kt_notice_detail_page
 )
 
 

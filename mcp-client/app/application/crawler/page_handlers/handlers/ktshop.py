@@ -21,6 +21,176 @@ from ..utils import to_mshop_url, sanitize_filename, smart_goto, safe_goto, laun
 logger = logging.getLogger(__name__)
 
 
+def _process_shop_detail_ocr(detail_html: str) -> str:
+    """
+    '다음내용참조' alt 이미지를 GPT-4V OCR로 텍스트 추출 후 HTML에 반영.
+    OCR 실패 시 원본 HTML 반환.
+    """
+    try:
+        import os
+        import base64
+        import requests
+        from openai import OpenAI
+
+        soup = BeautifulSoup(detail_html, 'html.parser')
+        if not os.environ.get('OPENAI_API_KEY'):
+            return detail_html
+
+        openai_client = OpenAI()
+        images = soup.find_all('img', alt='다음내용참조')
+        if not images:
+            return detail_html
+
+        logger.info(f"🔍 {len(images)} images found, starting GPT-4V OCR...")
+        for img in images:
+            try:
+                img_url = img.get('src', '')
+                if not img_url:
+                    continue
+                if img_url.startswith('//'):
+                    img_url = 'https:' + img_url
+                elif img_url.startswith('/'):
+                    img_url = 'https://shop.kt.com' + img_url
+
+                img_response = requests.get(img_url, timeout=90)
+                from PIL import Image
+                from io import BytesIO
+
+                image = Image.open(BytesIO(img_response.content))
+                width, height = image.size
+                chunk_height = 1000
+                image_chunks = []
+
+                if height > chunk_height:
+                    for y in range(0, height, chunk_height):
+                        box = (0, y, width, min(y + chunk_height, height))
+                        chunk = image.crop(box)
+                        buffer = BytesIO()
+                        chunk.save(buffer, format='JPEG', quality=95)
+                        image_chunks.append(base64.b64encode(buffer.getvalue()).decode('utf-8'))
+                else:
+                    buffer = BytesIO()
+                    image.save(buffer, format='JPEG', quality=95)
+                    image_chunks.append(base64.b64encode(buffer.getvalue()).decode('utf-8'))
+
+                all_ocr_texts = []
+                for chunk_idx, chunk_data in enumerate(image_chunks):
+                    api_response = openai_client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": """당신은 마케팅 이미지에서 텍스트를 추출하는 OCR 전문가입니다.
+1. 이미지에 보이는 모든 텍스트만 추출합니다.
+2. 인물, 얼굴은 절대 분석하지 마세요.
+3. 마크다운 코드블록 없이 순수 텍스트만 반환하세요."""
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": f"[이미지 {chunk_idx + 1}/{len(image_chunks)}] 이 마케팅 이미지에서 보이는 텍스트만 추출해주세요."},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{chunk_data}"}}
+                                ]
+                            }
+                        ],
+                        max_tokens=5000,
+                        temperature=0.0
+                    )
+                    chunk_text = api_response.choices[0].message.content.strip()
+                    chunk_text = re.sub(r'^```(?:plaintext|text|markdown)?\s*\n?', '', chunk_text)
+                    chunk_text = re.sub(r'\n?```\s*$', '', chunk_text)
+                    chunk_text = chunk_text.strip()
+
+                    refusal_phrases = ["I'm sorry", "I can't assist", "I cannot assist", "I'm unable to", "I cannot help"]
+                    if not any(p.lower() in chunk_text.lower() for p in refusal_phrases) and chunk_text:
+                        all_ocr_texts.append(chunk_text)
+
+                ocr_text = "\n".join(all_ocr_texts)
+                if ocr_text and len(ocr_text) > 10:
+                    new_tag = soup.new_tag('div')
+                    new_tag.string = f'\n{ocr_text}\n'
+                    img.replace_with(new_tag)
+            except Exception as ocr_error:
+                logger.warning(f"⚠️ OCR failed: {str(ocr_error)}")
+                continue
+
+        return str(soup)
+    except ImportError:
+        return detail_html
+    except Exception as e:
+        logger.warning(f"⚠️ OCR error: {str(e)}")
+        return detail_html
+
+
+async def handle_mobile_view_detail(
+    url: str,
+    fclient: Any,
+    menu: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    shop.kt.com/mobile/view.do 단일 상세 페이지 핸들러.
+    재시도(failed_targets) 및 직접 URL 크롤링 시 사용.
+    """
+    logger.info(f"🔗 KT Shop mobile view detail: {url}")
+
+    async with async_playwright() as p:
+        browser = await launch_chromium(p)
+        page = await browser.new_page()
+        try:
+            detail_resp = await safe_goto(
+                page, url,
+                wait_for_selector='.nwViewProdDetail, #cfmClContents, .prodDetailWrap, .prodDetail',
+                base_timeout=75000, retries=3
+            )
+            if detail_resp is None:
+                await browser.close()
+                return {"error": "상세 페이지 로드 타임아웃"}
+
+            await page.wait_for_timeout(2000)
+
+            title = await page.evaluate("""
+                () => {
+                    const sel = document.querySelector('.nwViewProdDetail h1') || document.querySelector('.prd-tit')
+                        || document.querySelector('.nwViewProdDetail .title') || document.querySelector('h1')
+                        || document.querySelector('#cfmClContents h1');
+                    return sel ? sel.textContent.trim() : '';
+                }
+            """)
+
+            detail_html = await page.evaluate("""
+                () => {
+                    const containers = [
+                        '.nwViewProdDetail', '#cfmClContents', '.prodDetailWrap', '.prodDetail', '#view-1',
+                        '.ui-view-info', '.product-detail', 'main', 'article', '#content'
+                    ];
+                    for (const sel of containers){
+                        const el = document.querySelector(sel);
+                        if (el && el.innerHTML && el.innerHTML.trim().length>0) {
+                            return el.innerHTML;
+                        }
+                    }
+                    return document.body ? document.body.innerHTML : '';
+                }
+            """)
+            detail_html = detail_html or ""
+            detail_html = _process_shop_detail_ocr(detail_html)
+            markdown_content = md(detail_html)
+        finally:
+            await browser.close()
+
+    title = (title or "").strip() or "KT Shop 상품"
+
+    return {
+        "url": url,
+        "murl": to_mshop_url(url),
+        "title": title,
+        "markdown": markdown_content,
+        "html": detail_html,
+        "special_processed": True,
+        "playwright_processed": True,
+    }
+
+
 async def handle_ktshop_popup_extractor(
     url: str, 
     fclient: Any, 
@@ -430,6 +600,10 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
         """)
 
         logger.info(f"🔍 List: {len(product_items)} items")
+        prodnm_list = [pi.get("prodnm", "") for pi in product_items if pi.get("prodnm")]
+        logger.info(f"🔍 product_items prodnm: {prodnm_list[:15]}{'...' if len(prodnm_list) > 15 else ''} (총 {len(prodnm_list)}개)")
+        for i, pi in enumerate(product_items):
+            logger.debug(f"   [product_items][{i}] prodnm={pi.get('prodnm','')} prodno={pi.get('prodno','')}")
 
         # 제품별 대표 정보 정리
         normalized = []
@@ -438,9 +612,11 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
         for item in product_items:
             prodnm = (item.get('prodnm') or '').strip()
             if not prodnm or prodnm in seen_names:
+                if prodnm and prodnm in seen_names:
+                    logger.debug(f"   [skip] prodnm 중복: {prodnm} (prodno={item.get('prodno','')})")
                 continue
             seen_names.add(prodnm)
-            
+
             prodno = (item.get('prodno') or '').strip()
             detail_url = url
             if prodno:
@@ -448,7 +624,10 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                 detail_url = f"https://shop.kt.com/mobile/view.do?prodNo={prodno}"
             normalized.append({'name': prodnm, 'url': detail_url, 'prodno': prodno})
 
-        logger.info(f"🔍 Normalized: {len(normalized)} items")
+        normalized_names = [n["name"] for n in normalized]
+        logger.info(f"🔍 Normalized: {normalized_names[:15]}{'...' if len(normalized_names) > 15 else ''} (총 {len(normalized)}개)")
+        for i, n in enumerate(normalized):
+            logger.debug(f"   [normalized][{i}] {n['name']} prodno={n.get('prodno','')} url={n['url'][:80]}...")
         failed_targets = []
 
         # 각 제품 상세에서 내용 추출
@@ -459,12 +638,12 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                     try:
                         detail_resp = await safe_goto(
                             page, prod['url'],
-                            wait_for_selector='.nwViewProdDetail, #cfmClContents',
-                            base_timeout=60000, retries=2
+                            wait_for_selector='.nwViewProdDetail, #cfmClContents, .prodDetailWrap, .prodDetail',
+                            base_timeout=75000, retries=3
                         )
                         if detail_resp is None:
                             raise Exception("상세 페이지 로드 타임아웃")
-                        await page.wait_for_timeout(1000)
+                        await page.wait_for_timeout(2000)
                     except Exception as _e:
                         menu_name = f"{base_menu}^{prod['name']}" if base_menu else f"Shop^{prod['name']}"
                         failed_targets.append({"url": prod['url'], "error": f"Navigation failed: {str(_e)}", "menu": menu_name})
@@ -473,7 +652,10 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
 
                 detail_html = await page.evaluate("""
                     () => {
-                        const containers = ['.nwViewProdDetail', '#cfmClContents', '.prodDetailWrap', '.prodDetail', '#view-1'];
+                        const containers = [
+                            '.nwViewProdDetail', '#cfmClContents', '.prodDetailWrap', '.prodDetail', '#view-1',
+                            '.ui-view-info', '.product-detail', 'main', 'article', '#content'
+                        ];
                         for (const sel of containers){
                             const el = document.querySelector(sel);
                             if (el && el.innerHTML && el.innerHTML.trim().length>0) {
@@ -483,153 +665,10 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                         return document.body ? document.body.innerHTML : '';
                     }
                 """)
-
-                # "다음내용참조" alt를 가진 이미지를 GPT-4V로 OCR 처리
-                try:
-                    import os
-                    import base64
-                    import requests
-                    from openai import OpenAI
-                    
-                    soup = BeautifulSoup(detail_html, 'html.parser')
-                    openai_client = None
-                    
-                    # OpenAI 클라이언트 초기화
-                    if os.environ.get('OPENAI_API_KEY'):
-                        openai_client = OpenAI()
-                        logger.debug("🔍 GPT-4V OCR ready")
-                    
-                    # "다음내용참조" alt를 가진 이미지 찾기
-                    images = soup.find_all('img', alt='다음내용참조')
-                    if images and openai_client:
-                        logger.info(f"🔍 {len(images)} images found, starting GPT-4V OCR...")
-                        
-                        for img in images:
-                            try:
-                                img_url = img.get('src', '')
-                                if not img_url:
-                                    continue
-                                
-                                # 상대 경로를 절대 경로로 변환
-                                if img_url.startswith('//'):
-                                    img_url = 'https:' + img_url
-                                elif img_url.startswith('/'):
-                                    img_url = 'https://shop.kt.com' + img_url
-                                
-                                logger.info(f"🔍 OCR processing: {img_url}")
-                                
-                                # 이미지 다운로드
-                                from PIL import Image
-                                from io import BytesIO
-                                
-                                img_response = requests.get(img_url, timeout=90)
-                                
-                                # PIL Image로 변환하여 크기 확인
-                                image = Image.open(BytesIO(img_response.content))
-                                width, height = image.size
-                                
-                                # 1000px 단위로 분할
-                                chunk_height = 1000
-                                image_chunks = []
-                                
-                                if height > chunk_height:
-                                    logger.info(f"📐 Image size: {width}x{height}px, splitting into chunks...")
-                                    for y in range(0, height, chunk_height):
-                                        box = (0, y, width, min(y + chunk_height, height))
-                                        chunk = image.crop(box)
-                                        
-                                        buffer = BytesIO()
-                                        chunk.save(buffer, format='JPEG', quality=95)
-                                        chunk_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                                        image_chunks.append(chunk_base64)
-                                    logger.info(f"📐 Split into {len(image_chunks)} chunks")
-                                else:
-                                    # 1000px 이하면 그대로 사용
-                                    buffer = BytesIO()
-                                    image.save(buffer, format='JPEG', quality=95)
-                                    image_chunks.append(base64.b64encode(buffer.getvalue()).decode('utf-8'))
-                                
-                                # 각 청크에 대해 OCR 수행
-                                all_ocr_texts = []
-                                for chunk_idx, chunk_data in enumerate(image_chunks):
-                                    api_response = openai_client.chat.completions.create(
-                                        model="gpt-4o",
-                                        messages=[
-                                            {
-                                                "role": "system",
-                                                "content": """당신은 마케팅 이미지에서 텍스트를 추출하는 OCR 전문가입니다.
-
-## 작업 목적
-- 제품 홍보 페이지의 텍스트 정보를 추출하여 시각 장애인을 위한 접근성 서비스를 제공합니다.
-
-## 추출 규칙
-1. 이미지에 보이는 모든 텍스트(영어, 한글, 숫자, 특수문자)만 추출합니다.
-2. 텍스트의 순서와 구조를 최대한 유지합니다.
-3. 배경과 구분이 어려운 텍스트도 최선을 다해 인식합니다.
-
-## 중요 제한사항
-- 인물, 얼굴, 사람에 대해서는 절대 분석하거나 언급하지 마세요.
-- 이미지 속 사진이나 그래픽 요소는 무시하고 오직 텍스트만 추출하세요.
-- 텍스트가 없는 영역은 건너뛰세요.
-- 텍스트가 전혀 없다면 빈 문자열만 반환하세요.
-
-## 출력 형식
-- 마크다운 코드블록(```)이나 기타 포맷팅 없이 순수 텍스트만 반환하세요.
-- 추출한 텍스트를 있는 그대로 출력하세요."""
-                                            },
-                                            {
-                                                "role": "user",
-                                                "content": [
-                                                    {"type": "text", "text": f"[이미지 {chunk_idx + 1}/{len(image_chunks)}] 이 마케팅 이미지에서 보이는 텍스트만 추출해주세요. 사진이나 인물은 무시하고 글자만 읽어주세요."},
-                                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{chunk_data}"}}
-                                                ]
-                                            }
-                                        ],
-                                        max_tokens=5000,
-                                        temperature=0.0
-                                    )
-                                    chunk_text = api_response.choices[0].message.content.strip()
-                                    
-                                    # 마크다운 코드블록 제거
-                                    import re
-                                    chunk_text = re.sub(r'^```(?:plaintext|text|markdown)?\s*\n?', '', chunk_text)
-                                    chunk_text = re.sub(r'\n?```\s*$', '', chunk_text)
-                                    chunk_text = chunk_text.strip()
-                                    
-                                    # 거부 응답 필터링
-                                    refusal_phrases = ["I'm sorry", "I can't assist", "I cannot assist", "I'm unable to", "I cannot help"]
-                                    is_refusal = any(phrase.lower() in chunk_text.lower() for phrase in refusal_phrases)
-                                    
-                                    if is_refusal:
-                                        logger.info(f"⚠️ Chunk {chunk_idx + 1}/{len(image_chunks)} OCR: Refusal filtered")
-                                    elif chunk_text:
-                                        all_ocr_texts.append(chunk_text)
-                                        logger.info(f"✅ Chunk {chunk_idx + 1}/{len(image_chunks)} OCR: {len(chunk_text)} chars")
-                                
-                                # 전체 텍스트 합치기
-                                ocr_text = "\n".join(all_ocr_texts)
-                                
-                                if ocr_text and len(ocr_text) > 10:
-                                    logger.info(f"✅ OCR: {len(ocr_text)} chars")
-                                    # 이미지를 추출된 텍스트로 대체
-                                    new_tag = soup.new_tag('div')
-                                    new_tag.string = f'\n{ocr_text}\n'
-                                    img.replace_with(new_tag)
-                                else:
-                                    logger.warning(f"⚠️ No OCR result: {img_url}")
-                                    
-                            except Exception as ocr_error:
-                                logger.warning(f"⚠️ OCR failed: {str(ocr_error)}")
-                                continue
-                        
-                        # 수정된 HTML로 업데이트
-                        detail_html = str(soup)
-                        logger.info("✅ OCR done")
-                    
-                except ImportError:
-                    logger.debug("OpenAI not installed - skipping OCR")
-                except Exception as e:
-                    logger.warning(f"⚠️ OCR error: {str(e)}")
+                raw_len = len(detail_html or "")
+                detail_html = _process_shop_detail_ocr(detail_html or "")
+                if raw_len < 500:
+                    logger.debug(f"   [detail][{idx}] {prod['name']}: raw_html={raw_len}chars (빈/짧음)")
 
                 md_all = md(detail_html)
                 menu_name = f"{base_menu}^{prod['name']}" if base_menu else f"Shop^{prod['name']}"
@@ -643,6 +682,7 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                     'playwright_processed': True,
                     'murl': to_mshop_url(prod['url'])
                 })
+                logger.debug(f"   [detail][{idx}] {prod['name']}: OK datas.append (html={len(detail_html)}chars)")
             except Exception as e:
                 menu_name = f"{base_menu}^{prod['name']}" if base_menu else f"Shop^{prod['name']}"
                 failed_targets.append({"url": prod.get('url', ''), "error": str(e), "menu": menu_name})
@@ -669,10 +709,29 @@ register_page_handler(
     r'https?://shop\.kt\.com/mobile/products\.do\?category=.*',
     handle_mobile_products_list
 )
+register_page_handler(
+    r'https?://shop\.kt\.com/mobile/view\.do\?prodNo=.*',
+    handle_mobile_view_detail
+)
+
+
+async def handle_accessory_detail_page(
+    url: str,
+    fclient: Any,
+    menu: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    shop.kt.com/accessory/accsProductView.do 단일 상세 페이지 핸들러.
+    재시도(failed_targets) 및 직접 URL 크롤링 시 사용.
+    """
+    result = await handle_accessory_detail(url, fclient, context=None)
+    if result is None:
+        return {"error": "액세서리 상세 페이지 추출 실패"}
+    return result
 
 
 async def handle_accessory_detail(url: str, fclient: Any, context=None) -> Optional[Dict[str, Any]]:
-    """액세서리 상세 페이지 핸들러"""
+    """액세서리 상세 페이지 핸들러 (내부/목록 핸들러에서 호출)"""
     logger.info(f"🔗 Accessory detail: {url}")
 
     async def _process_detail(ctx) -> Optional[Dict[str, Any]]:
@@ -680,15 +739,39 @@ async def handle_accessory_detail(url: str, fclient: Any, context=None) -> Optio
         status_detail = None
         try:
             try:
-                response_detail = await smart_goto(page, url, wait_for_selector='.ui-prd_tit', timeout=45000)
+                response_detail = await smart_goto(
+                    page, url,
+                    wait_for_selector='.ui-prd_tit, .prd-tit, h1, .ui-view-info',
+                    timeout=60000,
+                    selector_timeout=20000,
+                    extra_wait=3000
+                )
             except Exception:
                 logger.error(f"❌ Detail page timeout")
                 return None
             status_detail = response_detail.status if response_detail else None
 
-            title = await page.evaluate("document.querySelector('.ui-prd_tit')?.textContent?.trim() || ''")
-            info_html = await page.evaluate("document.querySelector('.ui-view-info')?.outerHTML || ''")
-            tab_html = await page.evaluate("document.querySelector('.ui-prdView-tab')?.outerHTML || ''")
+            title = await page.evaluate("""
+                () => {
+                    const sel = document.querySelector('.ui-prd_tit') || document.querySelector('.prd-tit') 
+                        || document.querySelector('h1') || document.querySelector('.ui-view-info h2');
+                    return sel ? sel.textContent.trim() : '';
+                }
+            """)
+            info_html = await page.evaluate("""
+                () => {
+                    const sel = document.querySelector('.ui-view-info') || document.querySelector('.ui-prd_tit')?.closest('.ui-view-info') 
+                        || document.querySelector('.product-info') || document.querySelector('.prd-info');
+                    return sel ? sel.outerHTML : '';
+                }
+            """)
+            tab_html = await page.evaluate("""
+                () => {
+                    const sel = document.querySelector('.ui-prdView-tab') || document.querySelector('.prd-tab') 
+                        || document.querySelector('[class*="tab"]');
+                    return sel ? sel.outerHTML : '';
+                }
+            """)
 
             combined_html_parts = [part for part in [info_html, tab_html] if part]
             combined_html = "\n".join(combined_html_parts)
@@ -859,6 +942,12 @@ ACCESSORY_PATTERNS = [
 
 for pattern in ACCESSORY_PATTERNS:
     register_page_handler(pattern, handle_accessory_display_list)
+
+
+register_page_handler(
+    r'https?://shop\.kt\.com/accessory/accsProductView\.do\?prodNo=.*',
+    handle_accessory_detail_page
+)
 
 
 async def handle_goodbye_phoneview(url: str, fclient: Any, menu: Optional[str] = None) -> Dict[str, Any]:

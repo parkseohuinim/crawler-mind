@@ -6,6 +6,7 @@ input_urls 테이블에서 URL을 조회하여 크롤링하고,
 최종 결과는 data_*.json 형식으로 출력됩니다.
 """
 import asyncio
+import csv
 import json
 import logging
 import re
@@ -13,7 +14,7 @@ import unicodedata
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from sqlalchemy import select, or_
 
@@ -1625,17 +1626,17 @@ class DailyCrawlingService:
             {"message": "텍스트 유사도 분석 중...", "status": "active"},
         )
         
-        results = self._apply_similarity_analysis(results)
+        results, removed_duplicates = self._apply_similarity_analysis(results)
         
-        # 중복 개수 카운트
-        duplicate_count = sum(1 for r in results if r.get("status") == "duplicate")
+        # 중복 개수
+        duplicate_count = len(removed_duplicates)
         if duplicate_count > 0:
             await self._send_update(
                 task_id,
                 "status",
-                {"message": f"유사도 분석 완료: {duplicate_count}개 중복 감지", "status": "active"},
+                {"message": f"유사도 분석 완료: {duplicate_count}개 중복 제거", "status": "active"},
             )
-            logger.info(f"📊 유사도 분석 완료: {duplicate_count}개 중복 감지")
+            logger.info(f"📊 유사도 분석 완료: {duplicate_count}개 중복 제거")
         else:
             await self._send_update(
                 task_id,
@@ -1656,13 +1657,22 @@ class DailyCrawlingService:
                 json.dump(results, f, ensure_ascii=False, indent=2)
             
             logger.info(f"✅ JSON saved: {file_path} ({len(results)} items)")
+            
+            # 중복 제거된 항목 CSV 저장
+            if removed_duplicates:
+                csv_path = RESULT_DIR / f"duplicates_removed_{timestamp}.csv"
+                self._save_duplicates_csv(removed_duplicates, csv_path)
+                logger.info(f"✅ Duplicates CSV saved: {csv_path} ({len(removed_duplicates)} items)")
+            
             return file_path
             
         except Exception as e:
             logger.error(f"❌ JSON save failed: {e}")
             return None
     
-    def _apply_similarity_analysis(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _apply_similarity_analysis(
+        self, results: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         결과 리스트에 TF-IDF 기반 유사도 분석을 적용하여 중복 항목을 삭제합니다.
         
@@ -1686,13 +1696,15 @@ class DailyCrawlingService:
                     각 항목에 "text", "url", "hierarchy", "docId" 포함
             
         Returns:
-            List[Dict[str, Any]]: 중복이 제거된 결과 리스트
+            Tuple[List[Dict], List[Dict]]: (중복 제거된 결과, 제거된 중복 항목 리스트)
         """
+        removed_duplicates: List[Dict[str, Any]] = []
+        
         # --------------------------------------------------------
         # 입력 검증: 최소 2개 이상 필요
         # --------------------------------------------------------
         if len(results) < 2:
-            return results
+            return results, removed_duplicates
         
         try:
             # --------------------------------------------------------
@@ -1712,7 +1724,7 @@ class DailyCrawlingService:
                     urls.append(url)
             
             if len(texts) < 2:
-                return results
+                return results, removed_duplicates
             
             # --------------------------------------------------------
             # 2단계: 유사도 분석 실행
@@ -1722,13 +1734,14 @@ class DailyCrawlingService:
             duplicates, dup_map = analyzer.find_duplicates(texts, urls)
             
             if not duplicates:
-                return results
+                return results, removed_duplicates
             
             # --------------------------------------------------------
-            # 3단계: 삭제할 인덱스 수집
+            # 3단계: 삭제할 인덱스 수집 및 제거 대상 정보 기록
             # 각 중복 쌍에서 원본/중복을 결정하고 중복 인덱스 수집
             # --------------------------------------------------------
             indices_to_remove = set()
+            duplicate_to_original: Dict[int, Tuple[int, float]] = {}  # duplicate_idx -> (original_idx, score)
             
             for dup_info in duplicates:
                 # valid_indices를 통해 실제 results 인덱스로 변환
@@ -1746,6 +1759,7 @@ class DailyCrawlingService:
                     continue
                 
                 indices_to_remove.add(duplicate_idx)
+                duplicate_to_original[duplicate_idx] = (original_idx, dup_info.similarity_score)
                 
                 original_url = results[original_idx].get("url", "")
                 duplicate_url = results[duplicate_idx].get("url", "")
@@ -1755,19 +1769,73 @@ class DailyCrawlingService:
                 )
             
             # --------------------------------------------------------
-            # 4단계: 중복 항목 삭제
+            # 4단계: 제거 대상 항목 정보 수집 (삭제 전)
+            # --------------------------------------------------------
+            for duplicate_idx in indices_to_remove:
+                original_idx, score = duplicate_to_original.get(duplicate_idx, (None, 0.0))
+                dup_item = results[duplicate_idx]
+                orig_item = results[original_idx] if original_idx is not None else {}
+                removed_duplicates.append({
+                    "duplicate_url": dup_item.get("url", ""),
+                    "duplicate_docId": dup_item.get("docId", ""),
+                    "duplicate_title": dup_item.get("title", ""),
+                    "duplicate_hierarchy": " > ".join(dup_item.get("hierarchy", [])),
+                    "original_url": orig_item.get("url", ""),
+                    "original_docId": orig_item.get("docId", ""),
+                    "original_title": orig_item.get("title", ""),
+                    "similarity_score": round(score, 4),
+                })
+            
+            # --------------------------------------------------------
+            # 5단계: 중복 항목 삭제
             # 역순으로 삭제해야 앞쪽 인덱스가 밀리지 않음
             # --------------------------------------------------------
             for idx in sorted(indices_to_remove, reverse=True):
                 del results[idx]
             
             logger.info(f"[_apply_similarity_analysis] Removed {len(indices_to_remove)} duplicates")
-            
-            return results
+            for rd in removed_duplicates:
+                logger.debug(
+                    f"   [removed] {rd.get('duplicate_title', '')} | "
+                    f"score={rd.get('similarity_score')} | "
+                    f"original={rd.get('original_title', '')}"
+                )
+
+            return results, removed_duplicates
             
         except Exception as e:
             logger.warning(f"[_apply_similarity_analysis] Error: {e}")
-            return results
+            return results, removed_duplicates
+    
+    def _save_duplicates_csv(
+        self, removed_duplicates: List[Dict[str, Any]], csv_path: Path
+    ) -> None:
+        """
+        유사도 분석으로 제거된 중복 항목 목록을 CSV 파일로 저장합니다.
+        
+        Args:
+            removed_duplicates: 제거된 중복 항목 리스트
+            csv_path: 저장할 CSV 파일 경로
+        """
+        if not removed_duplicates:
+            return
+        fieldnames = [
+            "duplicate_url",
+            "duplicate_docId",
+            "duplicate_title",
+            "duplicate_hierarchy",
+            "original_url",
+            "original_docId",
+            "original_title",
+            "similarity_score",
+        ]
+        try:
+            with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(removed_duplicates)
+        except Exception as e:
+            logger.error(f"❌ Duplicates CSV save failed: {e}")
     
     def _determine_original_and_duplicate(
         self, 

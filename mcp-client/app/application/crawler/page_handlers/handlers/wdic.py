@@ -50,9 +50,9 @@ async def handle_product_detail(
     max_retries = 3
     # domcontentloaded + wait_for_selector로 networkidle 대기 완화
     goto_configs = [
-        ("domcontentloaded", 35000, 3000),
-        ("load", 50000, 5000),
-        ("domcontentloaded", 60000, 7000),
+        ("domcontentloaded", 40000, 4000),
+        ("load", 60000, 6000),
+        ("domcontentloaded", 75000, 8000),
     ]
     
     # browser가 닫혔을 때 fallback: 자체 브라우저 생성
@@ -84,21 +84,32 @@ async def handle_product_detail(
             try:
                 response = await page.goto(url, wait_until=wait_until, timeout=timeout)
                 
-                # 상품 상세 페이지 콘텐츠 대기
-                try:
-                    await page.wait_for_selector('.product-title, .prd-tit, .ui-view-info', timeout=10000)
-                except Exception:
-                    pass
+                # 상품 상세 페이지 콘텐츠 대기 (여러 선택자 fallback)
+                content_selectors = [
+                    '.product-title', '.prd-tit', '.ui-view-info', '#cfmClContents',
+                    '.product-detail', '.prd-detail', 'main', 'article'
+                ]
+                for sel in content_selectors:
+                    try:
+                        await page.wait_for_selector(sel, timeout=8000)
+                        break
+                    except Exception:
+                        continue
                 await page.wait_for_timeout(extra_wait)
                 
                 status_code = response.status if response else None
                 if status_code and status_code >= 400:
                     logger.error(f"❌ HTTP {status_code}: {url}")
                 
-                try:
-                    await page.wait_for_selector("#cfmClContents", timeout=10000)
-                except:
-                    logger.warning("⚠️ Main content load failed")
+                main_selectors = ["#cfmClContents", ".ui-view-info", ".product-detail", ".prd-detail", "main"]
+                for sel in main_selectors:
+                    try:
+                        await page.wait_for_selector(sel, timeout=8000)
+                        break
+                    except Exception:
+                        continue
+                else:
+                    logger.warning("⚠️ Main content load failed (all selectors)")
                 
                 title = await page.evaluate("""
                     () => {

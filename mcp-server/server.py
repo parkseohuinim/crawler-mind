@@ -197,7 +197,9 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
             js_heavy_domains = [
                 "google.com", "gmail.com", "youtube.com",
                 "facebook.com", "twitter.com", "instagram.com",
-                "linkedin.com", "reddit.com"
+                "linkedin.com", "reddit.com",
+                # KT 도메인 (SPA/JS 렌더링 의존)
+                "product.kt.com", "shop.kt.com", "inside.kt.com",
             ]
             is_js_heavy = any(domain in url.lower() for domain in js_heavy_domains)
             
@@ -252,7 +254,7 @@ async def crawl4ai_scrape(url: str, include_selector: Optional[str] = None) -> D
                 excluded_selector=excluded_selector,
                 # JS 의존 사이트: networkidle + 긴 대기 / 일반: domcontentloaded + 짧은 대기
                 wait_until="networkidle" if is_js_heavy else "domcontentloaded",
-                delay_before_return_html=12 if is_js_heavy else 6,
+                delay_before_return_html=15 if is_js_heavy else 6,
                 # JS 의존 사이트에서만 사용자 시뮬레이션 활성화
                 simulate_user=is_js_heavy,
                 override_navigator=is_js_heavy,
