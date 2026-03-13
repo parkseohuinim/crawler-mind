@@ -15,8 +15,10 @@ class OpenSearchService:
     """Service for interacting with OpenSearch for text search"""
     
     def __init__(self):
+        use_ssl = settings.opensearch_host.startswith("https://")
         self.client = OpenSearch(
-            hosts=[settings.opensearch_host],  # "https://opensearch.alvinpark.xyz"
+            hosts=[settings.opensearch_host],
+            use_ssl=use_ssl,
             verify_certs=False,
             ssl_show_warn=False,
             timeout=30,

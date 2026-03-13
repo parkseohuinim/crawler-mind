@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import to_gigagenie_murl, smart_goto
+from ..utils import to_gigagenie_murl, safe_goto, launch_chromium
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,20 @@ async def handle_gigagenie_detail(
     logger.info(f"Gigagenie detail page processing started: {url}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         page = await browser.new_page()
-        response = await smart_goto(page, url, wait_for_selector="#depth2Level", timeout=30000)
+        response = await safe_goto(page, url, wait_for_selector="#depth2Level", base_timeout=60000, retries=2)
+        if response is None:
+            await browser.close()
+            return {
+                "url": url,
+                "murl": to_gigagenie_murl(url),
+                "markdown": "# 페이지 로드 실패\n\n타임아웃으로 인해 콘텐츠를 추출하지 못했습니다.",
+                "html": "<h1>페이지 로드 실패</h1><p>타임아웃으로 인해 콘텐츠를 추출하지 못했습니다.</p>",
+                "special_processed": True,
+                "playwright_processed": True,
+                "error": "page_load_timeout"
+            }
         
         status_code = response.status if response else None
         if status_code and status_code >= 400:
@@ -121,7 +132,7 @@ async def handle_gigagenie_faq_playwright(url: str, fclient: Any) -> Dict[str, A
     logger.info(f"Gigagenie FAQ processing started: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         page = await browser.new_page()
         
         response = await page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -309,7 +320,7 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
     logger.info(f"🔗 Gigagenie News List handler entered: url={url}, menu={menu}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         page = await browser.new_page()
 
         response = await page.goto(url, wait_until="domcontentloaded", timeout=40000)
@@ -318,7 +329,7 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
         
         # 동적 로딩 대기: 뉴스 목록이 로드될 때까지 대기
         try:
-            await page.wait_for_selector('.news-list, .board-list, tbody tr', timeout=15000)
+            await page.wait_for_selector('.news-list, .board-list, tbody tr', timeout=30000)
             logger.info("✅ News list loaded")
         except Exception as e:
             logger.warning(f"⚠️ News list not loaded: {e}")

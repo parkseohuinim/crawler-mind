@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import to_mshop_url, smart_goto
+from ..utils import to_mshop_url, smart_goto, launch_chromium
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ async def handle_event_winner_announcements(
         
         # Playwright를 사용하여 페이지 접근
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await launch_chromium(p)
             context = await browser.new_context()
             page = await context.new_page()
             
@@ -180,7 +180,7 @@ async def handle_event_winner_announcements(
                         
                         # 새로운 브라우저 인스턴스로 상세 페이지 접근
                         async with async_playwright() as p:
-                            browser = await p.chromium.launch(headless=True)
+                            browser = await launch_chromium(p)
                             context = await browser.new_context()
                             detail_page = await context.new_page()
                             

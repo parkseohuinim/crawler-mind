@@ -19,7 +19,8 @@ from app.application.crawler.page_handlers.handlers import (
     kt_event,
     kt_past_event,
     tv_channel,
-    winner_announcements,
+    globalroaming,
+    # winner_announcements,  # 당첨자 발표 핸들러 OFF
 )
 
 # 클라이언트 import
@@ -38,5 +39,6 @@ __all__ = [
     "kt_event",
     "kt_past_event",
     "tv_channel",
-    "winner_announcements",
+    "globalroaming",
+    # "winner_announcements",
 ]

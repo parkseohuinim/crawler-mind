@@ -7,10 +7,33 @@ URL 변환, 파일명 정제, 날짜 포맷팅 등 공용 유틸리티 함수를
 import logging
 import re
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple, List
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 logger = logging.getLogger(__name__)
+
+
+# ── Chromium 메모리 최적화 launch args ──
+# 주의: --single-process 제거 (병렬 크롤링 시 "browser has been closed" 오류 원인)
+CHROMIUM_ARGS: List[str] = [
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--disable-sync",
+    "--no-first-run",
+]
+
+
+async def launch_chromium(playwright, headless: bool = True):
+    """메모리 최적화된 Chromium 브라우저 실행"""
+    return await playwright.chromium.launch(
+        headless=headless,
+        args=CHROMIUM_ARGS,
+    )
 
 # 글로벌 타임스탬프 변수
 CURRENT_TIMESTAMP: Optional[str] = None
@@ -200,6 +223,30 @@ def to_mglobalroaming_url(url: str) -> str:
     return urlunparse((parsed.scheme, mobile_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
+def canonicalize_url_for_docid(url: str) -> str:
+    """
+    docId 매칭용 URL 정규화.
+    product.kt.com/wDic, mDic: ItemCode, CateCode, filter_code만 유지.
+    동일 문서를 가리키는 다른 파라미터 조합의 URL이 같은 docId를 갖도록 함.
+    그 외 도메인: 변경 없음.
+    """
+    if not url or not url.startswith('http'):
+        return url or ''
+    if 'product.kt.com' not in url:
+        return url
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        keep = ['ItemCode', 'CateCode', 'filter_code']
+        new_params = {k: params[k][:1] for k in keep if k in params}
+        new_query = urlencode(new_params, doseq=True)
+        path = parsed.path.replace('/mDic/', '/wDic/')
+        netloc = parsed.netloc.replace('m.product.', 'product.')
+        return urlunparse((parsed.scheme, netloc, path, '', new_query, ''))
+    except Exception:
+        return url
+
+
 def to_gigagenie_murl(url: str) -> str:
     """기가지니 블로그 PC URL을 모바일(https://gigagenie.kt.com/m/blog) 형태로 변환"""
     if not url or not url.startswith('http'):
@@ -248,6 +295,49 @@ def create_markdown(title: str, date: str, content: str) -> str:
 
 {content}
 """
+
+
+async def safe_goto(
+    page,
+    url: str,
+    wait_for_selector: Optional[str] = None,
+    base_timeout: int = 60000,
+    retries: int = 2,
+) -> Optional[Any]:
+    """
+    domcontentloaded 타임아웃 방지를 위한 안전한 페이지 로드.
+    실패 시 load, networkidle 순으로 fallback 재시도.
+    
+    Returns:
+        Response 객체 또는 None (모든 시도 실패 시)
+    """
+    goto_configs = [
+        ("domcontentloaded", base_timeout),
+        ("load", base_timeout + 15000),
+        ("networkidle", base_timeout + 30000),
+    ]
+    last_error = None
+    for attempt in range(min(retries + 1, len(goto_configs))):
+        wait_until, timeout = goto_configs[attempt]
+        try:
+            response = await page.goto(url, wait_until=wait_until, timeout=timeout)
+            if wait_for_selector:
+                try:
+                    await page.wait_for_selector(wait_for_selector, timeout=15000)
+                except Exception:
+                    logger.debug(f"🔍 Selector not found, continuing: {wait_for_selector}")
+            if response:
+                await page.wait_for_timeout(1500)
+            return response
+        except Exception as e:
+            last_error = e
+            if attempt < len(goto_configs) - 1:
+                logger.warning(f"⏳ goto 재시도 ({wait_until} 실패): {url[:80]}... ({e.__class__.__name__})")
+                await page.wait_for_timeout(2000)
+            else:
+                logger.warning(f"⏭️ goto 최종 실패, 스킵: {url[:80]}... ({e})")
+                return None
+    return None
 
 
 async def smart_goto(

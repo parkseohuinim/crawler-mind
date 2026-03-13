@@ -10,22 +10,91 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, BrowserContext
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import sanitize_filename, format_content, create_markdown
+from ..utils import sanitize_filename, format_content, create_markdown, launch_chromium
 
 logger = logging.getLogger(__name__)
+
+# goto 타임아웃 상향 (inside.kt.com 응답 느림 대비)
+_GOTO_TIMEOUTS = [(45000, 'domcontentloaded'), (60000, 'load'), (90000, 'networkidle')]
+
+
+async def _fetch_notice_metadata(page, url: str, attempt: int) -> Optional[Dict[str, Any]]:
+    """상세 페이지에서 메타데이터 추출 (공통 로직)."""
+    timeout_ms, wait_until = _GOTO_TIMEOUTS[min(attempt, len(_GOTO_TIMEOUTS) - 1)]
+    response = await page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+    status_code = response.status if response else None
+    if status_code and status_code >= 400:
+        logger.error(f"❌ HTTP {status_code}: {url}")
+    try:
+        await page.wait_for_selector('h1.title, .txt-content', timeout=10000)
+        logger.info("✅ Notice content loaded")
+    except Exception as e:
+        logger.warning(f"⚠️ Content not loaded (attempt {attempt+1}): {e}")
+    await page.wait_for_timeout(2000)
+    return await page.evaluate("""() => {
+        const title = document.querySelector('h1.title');
+        const dateElement = document.querySelector('.desc');
+        const contentDiv = document.querySelector('.txt-content');
+        let nextLink = '';
+        const nextElement = document.querySelector('a[data-bno].next-area');
+        if (nextElement) {
+            const nextBno = nextElement.getAttribute('data-bno');
+            if (nextBno) {
+                const currentUrl = window.location.href;
+                const baseUrl = currentUrl.split('?')[0];
+                nextLink = `${baseUrl}?bno=${nextBno}`;
+            }
+        }
+        if (!nextLink) {
+            const allElements = document.querySelectorAll('*');
+            for (let elem of allElements) {
+                if (elem.textContent && elem.textContent.includes('다음글')) {
+                    const parent = elem.closest('a[data-bno]');
+                    if (parent) {
+                        const nextBno = parent.getAttribute('data-bno');
+                        if (nextBno) {
+                            const currentUrl = window.location.href;
+                            const baseUrl = currentUrl.split('?')[0];
+                            nextLink = `${baseUrl}?bno=${nextBno}`;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (!nextLink) {
+            const nextLinks = document.querySelectorAll('a[href*="bno="]');
+            for (let link of nextLinks) {
+                if (link.textContent.includes('다음글') || link.textContent.includes('다음')) {
+                    nextLink = link.href;
+                    break;
+                }
+            }
+        }
+        return {
+            title: title ? title.textContent.trim() : '',
+            rawDate: dateElement ? dateElement.textContent.trim() : '',
+            nextLink: nextLink,
+            contentHtml: contentDiv ? contentDiv.innerHTML : ''
+        };
+    }""")
 
 
 async def handle_kt_notice_detail(
     url: str, 
     fclient: Any, 
-    cutoff_date: Optional[datetime] = None
+    cutoff_date: Optional[datetime] = None,
+    context: Optional[BrowserContext] = None
 ) -> Dict[str, Any]:
     """
     KT 공지사항 개별 게시물 처리 핸들러
+    
+    context가 전달되면 해당 컨텍스트의 새 페이지를 사용 (브라우저 재사용).
+    없으면 매번 새 Playwright 인스턴스를 생성.
     """
     if cutoff_date is None:
         cutoff_date = datetime.now() - timedelta(days=365)
@@ -37,94 +106,34 @@ async def handle_kt_notice_detail(
     
     for attempt in range(max_retries):
         try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-                )
+            if context:
                 page = await context.new_page()
-                
-                if attempt == 0:
-                    response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-                elif attempt == 1:
-                    response = await page.goto(url, wait_until='load', timeout=40000)
-                else:
-                    response = await page.goto(url, wait_until='networkidle', timeout=50000)
-                
-                status_code = response.status if response else None
-                if status_code and status_code >= 400:
-                    logger.error(f"❌ HTTP {status_code}: {url}")
-                
-                # 동적 로딩 대기: 콘텐츠가 로드될 때까지 대기
                 try:
-                    await page.wait_for_selector('h1.title, .txt-content', timeout=10000)
-                    logger.info("✅ Notice content loaded")
-                except Exception as e:
-                    logger.warning(f"⚠️ Content not loaded (attempt {attempt+1}): {e}")
-                await page.wait_for_timeout(2000)
-                
-                metadata = await page.evaluate("""() => {
-                    const title = document.querySelector('h1.title');
-                    const dateElement = document.querySelector('.desc');
-                    const contentDiv = document.querySelector('.txt-content');
-                    
-                    let nextLink = '';
-                    const nextElement = document.querySelector('a[data-bno].next-area');
-                    if (nextElement) {
-                        const nextBno = nextElement.getAttribute('data-bno');
-                        if (nextBno) {
-                            const currentUrl = window.location.href;
-                            const baseUrl = currentUrl.split('?')[0];
-                            nextLink = `${baseUrl}?bno=${nextBno}`;
-                        }
-                    }
-                    
-                    if (!nextLink) {
-                        const allElements = document.querySelectorAll('*');
-                        for (let elem of allElements) {
-                            if (elem.textContent && elem.textContent.includes('다음글')) {
-                                const parent = elem.closest('a[data-bno]');
-                                if (parent) {
-                                    const nextBno = parent.getAttribute('data-bno');
-                                    if (nextBno) {
-                                        const currentUrl = window.location.href;
-                                        const baseUrl = currentUrl.split('?')[0];
-                                        nextLink = `${baseUrl}?bno=${nextBno}`;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (!nextLink) {
-                        const nextLinks = document.querySelectorAll('a[href*="bno="]');
-                        for (let link of nextLinks) {
-                            if (link.textContent.includes('다음글') || link.textContent.includes('다음')) {
-                                nextLink = link.href;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    return {
-                        title: title ? title.textContent.trim() : '',
-                        rawDate: dateElement ? dateElement.textContent.trim() : '',
-                        nextLink: nextLink,
-                        contentHtml: contentDiv ? contentDiv.innerHTML : ''
-                    };
-                }""")
-                
-                await browser.close()
-                
-                if metadata['title'] and metadata['rawDate']:
-                    break
-                elif attempt < max_retries - 1:
-                    logger.warning(f"⚠️ Attempt {attempt + 1} failed, retrying...")
-                    continue
-                else:
-                    return {"error": "제목 또는 날짜 정보를 찾을 수 없습니다."}
+                    metadata = await _fetch_notice_metadata(page, url, attempt)
+                finally:
+                    await page.close()
+            else:
+                async with async_playwright() as p:
+                    browser = await launch_chromium(p)
+                    ctx = await browser.new_context(
+                        viewport={'width': 1920, 'height': 1080},
+                        user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                    )
+                    page = await ctx.new_page()
+                    try:
+                        metadata = await _fetch_notice_metadata(page, url, attempt)
+                    finally:
+                        await page.close()
+                        await browser.close()
+            
+            if metadata['title'] and metadata['rawDate']:
+                break
+            elif attempt < max_retries - 1:
+                logger.warning(f"⚠️ Attempt {attempt + 1} failed, retrying...")
+                await asyncio.sleep(2)  # 재시도 전 대기
+                continue
+            else:
+                return {"error": "제목 또는 날짜 정보를 찾을 수 없습니다."}
                     
         except Exception as e:
             if attempt < max_retries - 1:
@@ -212,6 +221,34 @@ async def handle_kt_notice_detail(
     }
 
 
+def _extract_next_url_from_bno(bno: str) -> str:
+    """bno로 다음 공지 URL 생성."""
+    base = "https://inside.kt.com/html/notice/notice_detail.html"
+    return f"{base}?bno={bno}" if bno else ""
+
+
+async def _get_next_url_from_list_page(context, list_url: str, current_bno: str) -> Optional[str]:
+    """목록 페이지에서 current_bno 다음 공지의 URL 추출 (타임아웃 fallback)."""
+    try:
+        page = await context.new_page()
+        try:
+            await page.goto(list_url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('a[data-bno]', timeout=10000)
+            bno_list = await page.evaluate("""() => {
+                const anchors = document.querySelectorAll('a[data-bno]');
+                return Array.from(anchors).map(a => a.getAttribute('data-bno')).filter(Boolean);
+            }""")
+            if bno_list and current_bno:
+                idx = next((i for i, b in enumerate(bno_list) if b == current_bno), -1)
+                if idx >= 0 and idx + 1 < len(bno_list):
+                    return _extract_next_url_from_bno(bno_list[idx + 1])
+        finally:
+            await page.close()
+    except Exception as e:
+        logger.warning(f"⚠️ Fallback next_url from list failed: {e}")
+    return None
+
+
 async def handle_kt_notice_main(
     url: str, 
     fclient: Any, 
@@ -221,12 +258,13 @@ async def handle_kt_notice_main(
     KT 공지사항 메인 목록 페이지 처리
     - 첫 번째 공지사항부터 다음글 링크를 따라가며 처리
     - 1년 이내 게시물만 처리
+    - 브라우저 1개 재사용, 타임아웃 시 목록 페이지 fallback
     """
     logger.info(f"🔗 KT notice main: {url}")
     cutoff_date = datetime.now() - timedelta(days=365)
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -255,81 +293,93 @@ async def handle_kt_notice_main(
             }""")
             if first_notice_link:
                 break
-        await browser.close()
-    
-    if not first_notice_link:
-        return {"error": "첫 번째 공지사항 링크를 찾을 수 없습니다"}
-    
-    total_processed = 0
-    current_url = first_notice_link
-    menus, datas = [], []
-    
-    consecutive_errors = 0
-    max_consecutive_errors = 3  # 연속 3회 실패 시 중단
-    
-    while current_url and total_processed < 1000:
-        try:
-            logger.info(f"🔍 Processing {total_processed + 1}: {current_url}")
-            
-            # 개별 상세 페이지에 120초(2분) 타임아웃 적용
+        await page.close()
+        
+        if not first_notice_link:
+            await browser.close()
+            return {"error": "첫 번째 공지사항 링크를 찾을 수 없습니다"}
+        
+        total_processed = 0
+        current_url = first_notice_link
+        menus, datas = [], []
+        consecutive_errors = 0
+        max_consecutive_errors = 3
+        list_url = url
+        
+        while current_url and total_processed < 1000:
             try:
-                result = await asyncio.wait_for(
-                    handle_kt_notice_detail(current_url, fclient, cutoff_date),
-                    timeout=120
-                )
-                consecutive_errors = 0  # 성공 시 에러 카운터 초기화
-            except asyncio.TimeoutError:
-                logger.warning(f"⚠️ Timeout (120s): {current_url}")
-                consecutive_errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.error(f"❌ Stopped: {max_consecutive_errors} consecutive failures")
+                logger.info(f"🔍 Processing {total_processed + 1}: {current_url}")
+                current_bno = None
+                m = re.search(r'bno=(\d+)', current_url)
+                if m:
+                    current_bno = m.group(1)
+                
+                try:
+                    result = await asyncio.wait_for(
+                        handle_kt_notice_detail(current_url, fclient, cutoff_date, context=context),
+                        timeout=150
+                    )
+                    consecutive_errors = 0
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Timeout (150s): {current_url}")
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.error(f"❌ Stopped: {max_consecutive_errors} consecutive failures")
+                        break
+                    current_url = await _get_next_url_from_list_page(context, list_url, current_bno or "")
+                    if not current_url:
+                        break
+                    await asyncio.sleep(2)
+                    continue
+                
+                if "error" in result:
+                    logger.warning(f"❌ Failed: {result['error']}")
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.error(f"❌ Stopped: {max_consecutive_errors} consecutive failures")
+                        break
+                    current_url = result.get("next_url")
+                    continue
+                
+                if result.get("date_cutoff_reached"):
+                    logger.info(f"🔍 Date cutoff reached")
                     break
-                # 타임아웃 시 다음 URL을 알 수 없으므로 중단
-                break
-            
-            if "error" in result:
-                logger.warning(f"❌ Failed: {result['error']}")
-                consecutive_errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.error(f"❌ Stopped: {max_consecutive_errors} consecutive failures")
-                    break
-                # 다음 URL로 계속 시도 (next_url이 있으면)
+                
+                formatted_date = ''
+                if result.get('date'):
+                    date_match = re.search(r'(\d{4})[.\-](\d{1,2})[.\-](\d{1,2})', result['date'])
+                    if date_match:
+                        formatted_date = f"{date_match.group(1)[2:]}-{date_match.group(2).zfill(2)}-{date_match.group(3).zfill(2)}"
+                
+                title_clean = sanitize_filename(result.get('title', 'unknown'))
+                last_folder = f"({formatted_date}){title_clean}" if formatted_date else title_clean
+                
+                menus.append({
+                    'menu': f"{menu}^{last_folder}" if menu else last_folder,
+                    'url': current_url
+                })
+                datas.append(result)
+                total_processed += 1
+                
                 current_url = result.get("next_url")
-                continue
-                
-            if result.get("date_cutoff_reached"):
-                logger.info(f"🔍 Date cutoff reached")
+                if not current_url:
+                    logger.info("🔗 No next link")
+                    break
+                    
+            except Exception as e:
+                logger.error(f"❌ Error: {str(e)}")
+                consecutive_errors += 1
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.error(f"❌ Stopped: {max_consecutive_errors} consecutive failures")
+                    break
+                if current_bno:
+                    current_url = await _get_next_url_from_list_page(context, list_url, current_bno)
+                    if current_url:
+                        await asyncio.sleep(2)
+                        continue
                 break
-            
-            formatted_date = ''
-            if result.get('date'):
-                date_match = re.search(r'(\d{4})[.\-](\d{1,2})[.\-](\d{1,2})', result['date'])
-                if date_match:
-                    formatted_date = f"{date_match.group(1)[2:]}-{date_match.group(2).zfill(2)}-{date_match.group(3).zfill(2)}"
-            
-            title_clean = sanitize_filename(result.get('title', 'unknown'))
-            last_folder = f"({formatted_date}){title_clean}" if formatted_date else title_clean
-            
-            menus.append({
-                'menu': f"{menu}^{last_folder}" if menu else last_folder,
-                'url': current_url
-            })
-            datas.append(result)
-            total_processed += 1
-            
-            current_url = result.get("next_url")
-            if not current_url:
-                logger.info("🔗 No next link")
-                break
-                
-        except Exception as e:
-            logger.error(f"❌ Error: {str(e)}")
-            consecutive_errors += 1
-            if consecutive_errors >= max_consecutive_errors:
-                logger.error(f"❌ Stopped: {max_consecutive_errors} consecutive failures")
-                break
-            # 예외 발생 시 다음 URL을 알 수 없으므로 중단
-            break
+        
+        await browser.close()
     
     logger.info(f"✅ KT notice done: {total_processed} items")
     

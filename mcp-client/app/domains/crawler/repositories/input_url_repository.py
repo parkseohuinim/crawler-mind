@@ -130,6 +130,28 @@ class InputUrlRepository:
             logger.debug(f"✅ URL {url_id} 상태 업데이트: {status}" + (f", handler: {handler_name}" if handler_name else ""))
             break
     
+    async def deactivate_url(self, url_id: int, reason: str = "") -> None:
+        """
+        URL 비활성화 (is_active = False)
+        페이지가 더 이상 유효하지 않을 때 호출
+        """
+        async for session in get_database_session():
+            stmt = (
+                update(InputUrl)
+                .where(InputUrl.id == url_id)
+                .values(
+                    is_active=False,
+                    last_status="deactivated",
+                    last_error=reason[:500] if reason else None,
+                    last_crawled_at=datetime.now(),
+                    updated_at=datetime.now(),
+                )
+            )
+            await session.execute(stmt)
+            await session.commit()
+            logger.info(f"🚫 URL {url_id} 비활성화: {reason[:100]}")
+            break
+
     async def get_stats(self) -> dict:
         """통계 조회"""
         async for session in get_database_session():

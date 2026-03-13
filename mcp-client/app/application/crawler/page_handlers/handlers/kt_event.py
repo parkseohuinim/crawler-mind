@@ -13,6 +13,7 @@ from markdownify import markdownify as md
 from bs4 import BeautifulSoup
 
 from ..handler_registry import register_page_handler
+from ..utils import launch_chromium
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ async def _fetch_mobile_event_map() -> dict:
     
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await launch_chromium(p)
             context = await browser.new_context(
                 viewport={'width': 375, 'height': 812},
                 user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
@@ -85,23 +86,78 @@ async def _fetch_mobile_event_map() -> dict:
                 timeout=30000
             )
             await page.wait_for_timeout(3000)
-            
+            # 페이지 하단으로 스크롤 (더보기 버튼 노출)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(1500)
+
             # 더보기 버튼 반복 클릭하여 모든 이벤트 로드
-            for _ in range(20):  # 안전장치
-                more_btn = await page.query_selector('a.btn-more, button.btn-more, .more-btn, [class*="more"]')
+            # 버튼 구조: <button class="btn-more">더보기<span>(1/2)</span><i class="icon-plus"></i></button>
+            # 이벤트 개수가 더 이상 늘지 않을 때까지 클릭
+            prev_count = await page.evaluate(
+                "() => document.querySelectorAll('a[data-mblevtno]').length"
+            )
+            no_increase_count = 0
+            for _ in range(30):  # 안전장치
+                more_btn = await page.query_selector('button.btn-more, a.btn-more, .btn-more')
                 if not more_btn:
-                    break
-                is_visible = await more_btn.is_visible()
-                if not is_visible:
+                    logger.info("📱 더보기 버튼 없음, 로드 완료")
                     break
                 try:
-                    await more_btn.click()
-                    await page.wait_for_timeout(1500)
-                except Exception:
+                    try:
+                        await more_btn.scroll_into_view_if_needed(timeout=5000)
+                        await page.wait_for_timeout(800)
+                    except Exception:
+                        pass  # 스크롤 실패 시 JS 클릭으로 진행
+                    if not await more_btn.is_visible():
+                        pass  # 비가시여도 JS 클릭 시도
+                    try:
+                        await more_btn.click(force=True)
+                    except Exception:
+                        await page.evaluate(
+                            "document.querySelector('button.btn-more, .btn-more')?.click()"
+                        )
+                    await page.wait_for_timeout(2500)  # AJAX 로드 대기
+                    # 이벤트 개수 확인 (로드 여부 검증)
+                    curr_count = await page.evaluate(
+                        "() => document.querySelectorAll('a[data-mblevtno]').length"
+                    )
+                    if curr_count > prev_count:
+                        prev_count = curr_count
+                        no_increase_count = 0
+                        logger.info(f"📱 더보기 클릭 후 이벤트 {curr_count}개 로드")
+                    elif curr_count < prev_count and prev_count > 0:
+                        logger.warning("📱 더보기 2회 클릭 시 콘텐츠 초기화됨, 재로드 후 1회만 클릭")
+                        await page.goto(
+                            'https://m.kt.com/html/event/ongoing_event_list.html',
+                            wait_until='domcontentloaded',
+                            timeout=30000
+                        )
+                        await page.wait_for_timeout(2000)
+                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await page.wait_for_timeout(1500)
+                        await page.evaluate(
+                            "document.querySelector('button.btn-more, .btn-more')?.click()"
+                        )
+                        await page.wait_for_timeout(2500)
+                        prev_count = await page.evaluate(
+                            "() => document.querySelectorAll('a[data-mblevtno]').length"
+                        )
+                        break
+                    else:
+                        no_increase_count += 1
+                        if no_increase_count >= 2:
+                            logger.info("📱 더보기 클릭해도 이벤트 증가 없음, 완료")
+                            break
+                except Exception as e:
+                    logger.debug(f"📱 더보기 클릭 중단: {e}")
                     break
             
             # 모바일 이벤트 추출
             # 모바일 페이지 구조: <a data-mblevtno="..."><div class="event-txt"><p class="etitle">제목</p>...</div></a>
+            final_count = await page.evaluate(
+                "() => document.querySelectorAll('a[data-mblevtno]').length"
+            )
+            logger.info(f"📱 더보기 로드 완료, 총 이벤트 {final_count}개")
             mobile_events = await page.evaluate("""() => {
                 const links = document.querySelectorAll('a[data-mblevtno]');
                 const events = [];
@@ -191,7 +247,7 @@ async def handle_kt_event_detail(
     logger.info(f"KT Event detail processing started: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -405,7 +461,7 @@ async def handle_kt_event_main(
     logger.info(f"🎯 KT Event main processing started: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'

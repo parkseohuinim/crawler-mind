@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
-from ..utils import smart_goto
+from ..utils import smart_goto, launch_chromium
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ async def handle_membership_partner_list_playwright(url: str, fclient: Any, menu
     logger.info(f"🔗 Partner list: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         page = await browser.new_page()
         response = await smart_goto(page, url, wait_for_selector='#btnMoreData', timeout=30000)
         
@@ -85,7 +85,7 @@ async def handle_membership_faq_all_playwright(url: str, fclient: Any, menu: Opt
     logger.info(f"🔗 Membership FAQ: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         page = await browser.new_page()
         response = await smart_goto(page, url, wait_for_selector='iframe#cpEvent', timeout=30000)
         

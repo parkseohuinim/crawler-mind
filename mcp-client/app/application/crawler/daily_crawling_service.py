@@ -23,7 +23,11 @@ from app.application.crawler.page_handlers import (
     get_handler_for_url,
     page_handler_client,
 )
-from app.application.crawler.page_handlers.utils import to_mshop_url, to_mproduct_url
+from app.application.crawler.page_handlers.utils import (
+    canonicalize_url_for_docid,
+    to_mshop_url,
+    to_mproduct_url,
+)
 from app.application.crawler.preprocess import preprocess_content
 from app.application.crawler.preprocess.similarity import TextSimilarityAnalyzer
 from app.domains.crawler.entities.input_url import InputUrl
@@ -81,6 +85,7 @@ class DailyCrawlingService:
         self.task_streams: Dict[str, asyncio.Queue] = {}
         self._collected_results: Dict[str, List[Dict[str, Any]]] = {}  # task별 결과 수집
         self._failed_items: Dict[str, List[FailedItem]] = {}  # task별 실패 내역 수집
+        self._failed_targets_queue: Dict[str, List[Dict[str, Any]]] = {}  # task별 실패 타겟 큐 (재시도용)
     
     # ----------------------------------------------------------------------------------
     # Public APIs
@@ -118,6 +123,7 @@ class DailyCrawlingService:
         self.task_streams[task_id] = asyncio.Queue()
         self._collected_results[task_id] = []
         self._failed_items[task_id] = []
+        self._failed_targets_queue[task_id] = []
         
         # concurrency 범위 제한
         concurrency = max(1, min(10, concurrency))
@@ -276,6 +282,23 @@ class DailyCrawlingService:
             })
             success_count, failed_count = await self._batch_update_db(task_id, crawl_results, update_menu_links)
             
+            # 3-1. 실패 input_url 1회 재시도 (성공 시 DB status·menu_links 업데이트)
+            failed_input_urls = [r["input_url"] for r in crawl_results if not r.get("success")]
+            input_retry_success, _ = await self._retry_failed_input_urls(
+                task_id, failed_input_urls, update_menu_links
+            )
+            if input_retry_success:
+                success_count += input_retry_success
+                failed_count -= input_retry_success
+                logger.info(f"Input URL 재시도: {input_retry_success}건 복구")
+            
+            # 3-2. 실패 타겟 재시도 (성공 시 menu_links 업데이트)
+            retry_success, retry_failed = await self._retry_failed_targets(task_id, update_menu_links)
+            if retry_success or retry_failed:
+                success_count += retry_success
+                failed_count += retry_failed
+                logger.info(f"Retry: {retry_success} recovered, {retry_failed} still failed")
+            
             # 4. JSON 파일 저장
             json_file_path = await self._save_json_output(task_id)
             
@@ -312,6 +335,7 @@ class DailyCrawlingService:
             # 정리 (충분한 대기 후 스트림 큐 삭제)
             self._collected_results.pop(task_id, None)
             self._failed_items.pop(task_id, None)
+            self._failed_targets_queue.pop(task_id, None)
             asyncio.create_task(self._delayed_cleanup(task_id))
             
         except Exception as exc:
@@ -324,6 +348,7 @@ class DailyCrawlingService:
             await asyncio.sleep(1.0)
             self._collected_results.pop(task_id, None)
             self._failed_items.pop(task_id, None)
+            self._failed_targets_queue.pop(task_id, None)
             asyncio.create_task(self._delayed_cleanup(task_id))
 
     async def _delayed_cleanup(self, task_id: str, delay: float = 300.0) -> None:
@@ -364,6 +389,7 @@ class DailyCrawlingService:
                         "success": True,
                         "input_url": input_url,
                         "processed_result": processed_result,
+                        "failed_targets": crawl_result.get("failed_targets", []),
                     })
                     logger.info(f"✅ [{idx}/{len(urls)}] Success: {input_url.pc_url}")
                 else:
@@ -372,6 +398,8 @@ class DailyCrawlingService:
                         "success": False,
                         "input_url": input_url,
                         "error": crawl_result.get("error"),
+                        "handler_name": crawl_result.get("handler_name"),
+                        "timeout_seconds": crawl_result.get("timeout_seconds"),
                     })
                     logger.warning(f"❌ [{idx}/{len(urls)}] Failed: {input_url.pc_url}")
                 
@@ -387,11 +415,17 @@ class DailyCrawlingService:
                     
             except Exception as exc:
                 failed_count += 1
+                handler_name = None
+                handler_info = get_handler_for_url(input_url.pc_url)
+                if handler_info:
+                    _, handler_func = handler_info
+                    handler_name = handler_func.__name__
                 logger.error(f"❌ [{idx}/{len(urls)}] Error: {input_url.pc_url} - {exc}")
                 results.append({
                     "success": False,
                     "input_url": input_url,
                     "error": str(exc),
+                    "handler_name": handler_name,
                 })
         
         return results
@@ -440,6 +474,7 @@ class DailyCrawlingService:
                             "success": True,
                             "input_url": input_url,
                             "processed_result": processed_result,
+                            "failed_targets": crawl_result.get("failed_targets", []),
                         }
                         logger.info(f"✅ [{current}/{total}] Success: {input_url.pc_url}")
                     else:
@@ -447,6 +482,8 @@ class DailyCrawlingService:
                             "success": False,
                             "input_url": input_url,
                             "error": crawl_result.get("error"),
+                            "handler_name": crawl_result.get("handler_name"),
+                            "timeout_seconds": crawl_result.get("timeout_seconds"),
                         }
                         logger.warning(f"❌ [{current}/{total}] Failed: {input_url.pc_url}")
                     
@@ -470,6 +507,11 @@ class DailyCrawlingService:
                         curr_success = success_count
                         curr_failed = failed_count
                     
+                    handler_name = None
+                    handler_info = get_handler_for_url(input_url.pc_url)
+                    if handler_info:
+                        _, handler_func = handler_info
+                        handler_name = handler_func.__name__
                     logger.error(f"❌ [{current}/{total}] Error: {input_url.pc_url} - {exc}")
                     
                     await self._send_update(task_id, "progress", {
@@ -485,6 +527,7 @@ class DailyCrawlingService:
                         "success": False,
                         "input_url": input_url,
                         "error": str(exc),
+                        "handler_name": handler_name,
                     }
         
         # 모든 URL에 대해 병렬 실행
@@ -494,10 +537,16 @@ class DailyCrawlingService:
         # 예외 처리 및 결과 수집
         for i, result in enumerate(task_results):
             if isinstance(result, Exception):
+                handler_name = None
+                handler_info = get_handler_for_url(urls[i].pc_url)
+                if handler_info:
+                    _, handler_func = handler_info
+                    handler_name = handler_func.__name__
                 results.append({
                     "success": False,
                     "input_url": urls[i],
                     "error": str(result),
+                    "handler_name": handler_name,
                 })
             else:
                 results.append(result)
@@ -517,15 +566,17 @@ class DailyCrawlingService:
         
         # 핸들러 타입에 따라 타임아웃 조정
         handler_info = get_handler_for_url(url)
+        handler_name = None
         skip_timeout = False
         if handler_info:
             _, handler_func = handler_info
             handler_name = handler_func.__name__
             
-            # 다중 페이지 순회 핸들러 패턴들
+            # 다중 페이지 순회 / 다중 팝업 추출 핸들러 패턴들 (글로벌 타임아웃 미적용)
             multi_page_patterns = [
                 "_main",  # 기존: 다중 결과 메인 핸들러
                 "_list",  # 목록 핸들러 (내부에서 상세 페이지 순회)
+                "popup_extractor",  # KT Shop 선불USIM 등: layerOpen/plus 트리거 다수 순회 (2분+ 소요)
                 "gigagenie_faq",  # FAQ 전체 페이지 순회
                 "gigagenie_news",  # 뉴스 전체 페이지 순회
                 "winner_announcements",  # 당첨자발표 페이지네이션 + 상세 순회
@@ -541,6 +592,8 @@ class DailyCrawlingService:
             else:
                 # 일반 핸들러: 3분(180초) 타임아웃
                 timeout = 180
+        else:
+            handler_name = "default_scrape"
         
         try:
             if skip_timeout:
@@ -553,27 +606,30 @@ class DailyCrawlingService:
                     timeout=timeout
                 )
         except asyncio.TimeoutError:
-            logger.error(f"❌ Timeout ({timeout}s): {url}")
-            # 타임아웃 후 잠시 대기하여 비동기 작업 정리 시간 확보
+            logger.error(f"❌ Timeout ({timeout}s): {url} [handler: {handler_name}]")
             await asyncio.sleep(0.5)
             return {
                 "success": False,
                 "url": url,
-                "error": f"크롤링 타임아웃 ({timeout}초)"
+                "error": f"크롤링 타임아웃 ({timeout}초)",
+                "handler_name": handler_name,
+                "timeout_seconds": timeout,
             }
         except asyncio.CancelledError:
             logger.warning(f"⚠️ Cancelled: {url}")
             return {
                 "success": False,
                 "url": url,
-                "error": "크롤링 취소됨"
+                "error": "크롤링 취소됨",
+                "handler_name": handler_name,
             }
         except Exception as exc:
             logger.error(f"❌ Crawl failed {url}: {exc}")
             return {
                 "success": False,
                 "url": url,
-                "error": str(exc)
+                "error": str(exc),
+                "handler_name": handler_name,
             }
     
     async def _do_crawl_single_url(self, input_url: InputUrl) -> Dict[str, Any]:
@@ -598,7 +654,7 @@ class DailyCrawlingService:
                         menus = handler_result.get("menus", [])  # menus 배열도 가져오기
                         logger.info(f"✅ Handler result: {len(datas)} items, {len(menus)} menus ({url})")
                         
-                        # 여러 데이터를 포함한 결과 반환
+                        # 여러 데이터를 포함한 결과 반환 (failed_targets: 핸들러 내 개별 추출 실패 URL)
                         return {
                             "success": True,
                             "url": url,
@@ -611,6 +667,7 @@ class DailyCrawlingService:
                             "datas": datas,  # 모든 datas 포함
                             "menus": menus,  # menus 배열 포함
                             "is_multi_result": True,
+                            "failed_targets": handler_result.get("failed_targets", []),
                         }
                     else:
                         return {
@@ -622,6 +679,7 @@ class DailyCrawlingService:
                             "html_content": handler_result.get("html", ""),
                             "hierarchy": input_url.get_hierarchy_list(),
                             "handler_name": handler_func.__name__,
+                            "failed_targets": handler_result.get("failed_targets", []),
                         }
             
             # 2. 기본 MCP 스크래핑
@@ -653,6 +711,66 @@ class DailyCrawlingService:
                 "error": str(exc)
             }
     
+    # ----------------------------------------------------------------------------------
+    # 데드 페이지 감지
+    # ----------------------------------------------------------------------------------
+    # 데드 페이지 감지 패턴 (페이지 자체가 오류/접근 불가인 경우)
+    # 주의: 공지사항 등 정상 콘텐츠에서 "서비스 종료 안내" 등의 문구가 포함될 수 있으므로
+    #       페이지 구조 자체의 오류 메시지만 감지
+    DEAD_PAGE_PATTERNS = [
+        # 404 / 페이지 없음 (사이트 자체 에러 페이지)
+        "페이지를 찾을 수 없습니다",
+        "요청하신 페이지를 찾을 수 없습니다",
+        "페이지가 존재하지 않습니다",
+        "page not found",
+        # Chrome 연결 거부 (로컬호스트 리다이렉트, 인증 필요 등)
+        "사이트에 연결할 수 없음",
+        "ERR_CONNECTION_REFUSED",
+        "127.0.0.1에서 연결을 거부했습니다",
+        # 접근 불가 안내 (사이트 자체 메시지)
+        "현재 이용할 수 없는 페이지",
+        "이용할 수 없는 페이지입니다",
+    ]
+
+    # 일시적 서버 오류 (제외 대상 - deactivate 하지 않음)
+    TEMPORARY_ERROR_PATTERNS = [
+        "일시적인 오류",
+        "잠시 후 다시",
+        "서버 오류",
+        "서버가 응답하지",
+        "internal server error",
+        "502 bad gateway",
+        "503 service unavailable",
+        "504 gateway timeout",
+        "점검 중",
+        "시스템 점검",
+    ]
+
+    @classmethod
+    def _detect_dead_page(cls, text: str) -> Optional[str]:
+        """
+        크롤링된 텍스트가 데드 페이지인지 감지.
+        정상 콘텐츠 페이지(공지사항 등)의 오탐을 방지하기 위해
+        일시적 서버 오류 패턴이 있으면 무시한다.
+
+        Returns:
+            감지된 패턴 문자열 (데드 페이지인 경우), None (정상 페이지)
+        """
+        if not text:
+            return None
+
+        check_text = text[:2000].lower()
+
+        for pattern in cls.TEMPORARY_ERROR_PATTERNS:
+            if pattern.lower() in check_text:
+                return None
+
+        for pattern in cls.DEAD_PAGE_PATTERNS:
+            if pattern.lower() in check_text:
+                return pattern
+
+        return None
+
     # ----------------------------------------------------------------------------------
     # 전처리 및 JSON 변환
     # ----------------------------------------------------------------------------------
@@ -932,6 +1050,9 @@ class DailyCrawlingService:
         
         return metadata
     
+    # 서브도메인을 제거하고 m.kt.com으로 변환해야 하는 도메인
+    _REPLACE_TO_MKT = {"inside.kt.com", "www.kt.com"}
+
     def _pc_to_mobile_url(self, pc_url: str) -> str:
         """PC URL을 모바일 URL로 변환"""
         if not pc_url:
@@ -949,9 +1070,13 @@ class DailyCrawlingService:
         if "product.kt.com" in pc_url:
             return to_mproduct_url(pc_url)
         
-        # 기타 kt.com 도메인
+        # inside.kt.com, www.kt.com → m.kt.com (서브도메인 제거)
+        for domain in self._REPLACE_TO_MKT:
+            if domain in pc_url:
+                return pc_url.replace(domain, "m.kt.com")
+        
+        # 기타 kt.com 도메인 → m.{subdomain}.kt.com
         if "kt.com" in pc_url and "://m." not in pc_url:
-            # https://xxx.kt.com -> https://m.xxx.kt.com 형태로 변환 시도
             import re
             match = re.match(r'https://([^.]+)\.kt\.com(.*)', pc_url)
             if match:
@@ -961,6 +1086,226 @@ class DailyCrawlingService:
         
         return pc_url
     
+    async def _retry_failed_targets(self, task_id: str, update_menu_links: bool = False) -> tuple[int, int]:
+        """
+        큐에 쌓인 실패 타겟 URL을 한 번 더 추출 시도.
+        성공 시 update_menu_links=True이면 menu_links에도 반영.
+        Returns: (재시도 성공 건수, 여전히 실패 건수)
+        """
+        queue = self._failed_targets_queue.get(task_id, [])
+        if not queue:
+            return 0, 0
+        
+        logger.info(f"🔄 실패 타겟 재시도: {len(queue)}건")
+        await self._send_update(task_id, "status", {
+            "message": f"실패 타겟 재시도 중... ({len(queue)}건)",
+            "status": "active",
+        })
+        
+        retry_success = 0
+        
+        class _RetryInputUrl:
+            def __init__(self, url: str, menu: str, base_hierarchy: list):
+                self.pc_url = url
+                self.menu_path = menu or ""
+                self.mobile_url = None
+                self.id = None
+                self._base_hierarchy = base_hierarchy or []
+            
+            def get_hierarchy_list(self) -> list:
+                if self.menu_path:
+                    return [s.strip() for s in self.menu_path.split("^") if s.strip()]
+                return list(self._base_hierarchy)
+        
+        for i, ft in enumerate(queue):
+            url = ft.get("url", "").strip()
+            if not url or not url.startswith("http"):
+                continue
+            menu = ft.get("menu", "")
+            base_hierarchy = ft.get("base_hierarchy", [])
+            
+            try:
+                retry_input = _RetryInputUrl(url, menu, base_hierarchy)
+                handler_result = await route_url(url, page_handler_client, menu)
+                
+                if not handler_result:
+                    continue
+                
+                if "datas" in handler_result and handler_result.get("datas"):
+                    datas = handler_result["datas"]
+                    menus = handler_result.get("menus", [])
+                    for di, data in enumerate(datas):
+                        menu_info = menus[di] if di < len(menus) else {}
+                        menu_str = menu_info.get("menu", "")
+                        hierarchy = [s.strip() for s in menu_str.split("^") if s.strip()] if menu_str else list(base_hierarchy)
+                        data_url = menu_info.get("url") or data.get("url") or url
+                        single_result = {
+                            "url": data_url,
+                            "mobile_url": self._pc_to_mobile_url(data_url),
+                            "title": data.get("title", ""),
+                            "processed_text": "",
+                            "html_content": data.get("html", ""),
+                            "hierarchy": hierarchy,
+                            "is_handler_data": True,
+                        }
+                        if data.get("startdate"):
+                            single_result["startdate"] = data["startdate"]
+                        if data.get("enddate"):
+                            single_result["enddate"] = data["enddate"]
+                        if "recommendations" in data:
+                            single_result["recommendations"] = data["recommendations"]
+                        processed = self._preprocess_result(
+                            {"datas": [data], "menus": [menu_info], "is_multi_result": True, "hierarchy": hierarchy},
+                            retry_input,
+                        )
+                        if processed.get("processed_datas"):
+                            single_result["processed_text"] = processed["processed_datas"][0].get("processed_text", "")
+                        document_id = None
+                        if update_menu_links:
+                            document_id = await self._update_menu_links(single_result, retry_input)
+                        json_data = self._convert_to_json_format(single_result, retry_input, document_id)
+                        self._collected_results[task_id].append(json_data)
+                        retry_success += 1
+                else:
+                    crawl_result = {
+                        "success": True,
+                        "url": url,
+                        "mobile_url": handler_result.get("murl") or self._pc_to_mobile_url(url),
+                        "title": handler_result.get("title"),
+                        "markdown": handler_result.get("markdown", ""),
+                        "html_content": handler_result.get("html", "") or handler_result.get("html_content", ""),
+                        "hierarchy": retry_input.get_hierarchy_list(),
+                    }
+                    processed = self._preprocess_result(crawl_result, retry_input)
+                    document_id = None
+                    if update_menu_links:
+                        document_id = await self._update_menu_links(processed, retry_input)
+                    json_data = self._convert_to_json_format(processed, retry_input, document_id)
+                    self._collected_results[task_id].append(json_data)
+                    retry_success += 1
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ 재시도 실패 {url}: {e}")
+        
+        if retry_success > 0:
+            logger.info(f"✅ 실패 타겟 재시도 완료: {retry_success}/{len(queue)}건 성공")
+        
+        self._failed_targets_queue[task_id] = []
+        retry_failed = len(queue) - retry_success
+        return retry_success, retry_failed
+
+    async def _retry_failed_input_urls(
+        self,
+        task_id: str,
+        failed_input_urls: List[InputUrl],
+        update_menu_links: bool = True
+    ) -> tuple[int, int]:
+        """
+        실패한 input_urls를 1회 한정 재시도. 성공 시 DB status 및 menu_links 업데이트.
+        Returns: (재시도 성공 건수, 여전히 실패 건수)
+        """
+        if not failed_input_urls:
+            return 0, 0
+
+        logger.info(f"🔄 실패 input_url 재시도: {len(failed_input_urls)}건")
+        await self._send_update(task_id, "status", {
+            "message": f"실패 URL 재시도 중... ({len(failed_input_urls)}건)",
+            "status": "active",
+        })
+
+        retry_success = 0
+        retry_still_failed = 0
+        retried_success_ids: List[int] = []
+
+        for input_url in failed_input_urls:
+            try:
+                crawl_result = await self._crawl_single_url(input_url)
+                if not crawl_result.get("success"):
+                    retry_still_failed += 1
+                    continue
+
+                processed_result = self._preprocess_result(crawl_result, input_url)
+
+                # is_multi_result 처리
+                if processed_result.get("is_multi_result") and processed_result.get("processed_datas"):
+                    processed_datas = processed_result["processed_datas"]
+                    menus = processed_result.get("menus", [])
+                    for data_idx, data in enumerate(processed_datas):
+                        menu_info = menus[data_idx] if data_idx < len(menus) else {}
+                        menu_str = menu_info.get("menu", "")
+                        if menu_str:
+                            menu_parts = [p.strip() for p in menu_str.split("^") if p.strip()]
+                            data_hierarchy = menu_parts
+                            data_title = menu_parts[-1] if menu_parts else ""
+                        else:
+                            data_hierarchy = processed_result.get("hierarchy", []) or input_url.get_hierarchy_list()
+                            data_title = data.get("title") or ""
+                        data_url = menu_info.get("url") or data.get("url") or input_url.pc_url
+                        data_murl = menu_info.get("murl") or menu_info.get("mobile_url") or self._pc_to_mobile_url(data_url)
+                        single_result = {
+                            "url": data_url,
+                            "mobile_url": data_murl,
+                            "title": data_title,
+                            "processed_text": data.get("processed_text", ""),
+                            "html_content": data.get("html", ""),
+                            "hierarchy": data_hierarchy,
+                            "is_handler_data": True,
+                        }
+                        if data.get("startdate"):
+                            single_result["startdate"] = data["startdate"]
+                        if data.get("enddate"):
+                            single_result["enddate"] = data["enddate"]
+                        if "recommendations" in data:
+                            single_result["recommendations"] = data["recommendations"]
+                        document_id = None
+                        if update_menu_links:
+                            document_id = await self._update_menu_links(single_result, input_url)
+                        json_data = self._convert_to_json_format(single_result, input_url, document_id)
+                        self._collected_results[task_id].append(json_data)
+
+                    handler_name = processed_result.get("handler_name")
+                    await input_url_repository.update_crawl_status(
+                        input_url.id, "success", handler_name=handler_name
+                    )
+                    retried_success_ids.append(input_url.id)
+                    retry_success += 1
+                else:
+                    # 단일 결과: 데드 페이지 감지
+                    check_text = processed_result.get("processed_text") or processed_result.get("markdown") or ""
+                    dead_pattern = self._detect_dead_page(check_text)
+                    if dead_pattern:
+                        reason = f"데드 페이지 감지: {dead_pattern}"
+                        await input_url_repository.deactivate_url(input_url.id, reason)
+                        retry_still_failed += 1
+                        continue
+
+                    document_id = None
+                    if update_menu_links:
+                        document_id = await self._update_menu_links(processed_result, input_url)
+                    json_data = self._convert_to_json_format(processed_result, input_url, document_id)
+                    self._collected_results[task_id].append(json_data)
+                    handler_name = processed_result.get("handler_name")
+                    await input_url_repository.update_crawl_status(
+                        input_url.id, "success", handler_name=handler_name
+                    )
+                    retried_success_ids.append(input_url.id)
+                    retry_success += 1
+
+            except Exception as exc:
+                logger.warning(f"⚠️ input_url 재시도 실패 {input_url.pc_url}: {exc}")
+                retry_still_failed += 1
+
+        # 재시도 성공한 항목을 _failed_items에서 제거
+        if retried_success_ids:
+            self._failed_items[task_id] = [
+                fi for fi in self._failed_items.get(task_id, [])
+                if fi.id not in retried_success_ids
+            ]
+
+        if retry_success > 0:
+            logger.info(f"✅ 실패 input_url 재시도 완료: {retry_success}/{len(failed_input_urls)}건 성공")
+        return retry_success, retry_still_failed
+
     # ----------------------------------------------------------------------------------
     # 일괄 DB 업데이트
     # ----------------------------------------------------------------------------------
@@ -989,6 +1334,14 @@ class DailyCrawlingService:
         
         for idx, result in enumerate(crawl_results, start=1):
             input_url: InputUrl = result.get("input_url")
+            
+            # 핸들러 내 개별 타겟 추출 실패 URL 큐에 적재 (마지막 재시도용)
+            failed_targets = result.get("failed_targets", [])
+            if failed_targets:
+                base_hierarchy = input_url.get_hierarchy_list() or []
+                for ft in failed_targets:
+                    ft["base_hierarchy"] = base_hierarchy
+                self._failed_targets_queue[task_id].extend(failed_targets)
             
             try:
                 if result.get("success"):
@@ -1057,6 +1410,21 @@ class DailyCrawlingService:
                         success_count += 1
                     else:
                         # 단일 결과 처리
+                        # 데드 페이지 감지
+                        check_text = processed_result.get("processed_text") or processed_result.get("markdown") or ""
+                        dead_pattern = self._detect_dead_page(check_text)
+                        if dead_pattern:
+                            reason = f"데드 페이지 감지: {dead_pattern}"
+                            logger.warning(f"🚫 [{idx}/{total}] Dead page → deactivate: {input_url.pc_url} ({reason})")
+                            await input_url_repository.deactivate_url(input_url.id, reason)
+                            failed_count += 1
+                            self._failed_items[task_id].append(FailedItem(
+                                id=input_url.id,
+                                url=input_url.pc_url,
+                                error=reason,
+                            ))
+                            continue
+
                         # menu_links 업데이트 (docId 획득)
                         document_id = None
                         if update_menu_links:
@@ -1082,11 +1450,13 @@ class DailyCrawlingService:
                     )
                     failed_count += 1
                     
-                    # 실패 내역 저장
+                    # 실패 내역 저장 (핸들러명, 타임아웃 등 원인 추적용)
                     self._failed_items[task_id].append(FailedItem(
                         id=input_url.id,
                         url=input_url.pc_url,
-                        error=error_msg
+                        error=error_msg,
+                        handler_name=result.get("handler_name"),
+                        timeout_seconds=result.get("timeout_seconds"),
                     ))
                     
             except Exception as exc:
@@ -1149,7 +1519,7 @@ class DailyCrawlingService:
             try:
                 existing = None
                 
-                # menu_path + pc_url 조합으로 정확히 일치하는 경우에만 업데이트
+                # 1차: menu_path + pc_url 정확 일치
                 if menu_path and pc_url:
                     stmt = select(MenuLink).where(
                         MenuLink.menu_path == menu_path,
@@ -1157,6 +1527,17 @@ class DailyCrawlingService:
                     )
                     result = await session.execute(stmt)
                     existing = result.scalar_one_or_none()
+
+                # 2차: canonical URL 매칭 (같은 문서, 파라미터만 다른 URL → 동일 docId)
+                if not existing and menu_path and pc_url and "product.kt.com" in (pc_url or ""):
+                    canonical_new = canonicalize_url_for_docid(pc_url)
+                    stmt = select(MenuLink).where(MenuLink.menu_path == menu_path)
+                    result = await session.execute(stmt)
+                    candidates = result.scalars().all()
+                    for c in candidates:
+                        if c.pc_url and canonicalize_url_for_docid(c.pc_url) == canonical_new:
+                            existing = c
+                            break
                 
                 if existing:
                     # 업데이트
@@ -1230,7 +1611,14 @@ class DailyCrawlingService:
             logger.warning(f"⚠️ No results to save: {task_id}")
             return None
         
-        # ----- 유사도 분석 단계 -----
+        # ----- 1단계: URL+docId 기반 정확한 중복 제거 -----
+        before_exact = len(results)
+        results = self._remove_exact_duplicates(results)
+        exact_removed = before_exact - len(results)
+        if exact_removed > 0:
+            logger.info(f"📊 URL+docId 중복 제거: {exact_removed}건 제거 ({before_exact} → {len(results)})")
+        
+        # ----- 2단계: TF-IDF 유사도 분석 -----
         await self._send_update(
             task_id,
             "status",
@@ -1467,6 +1855,71 @@ class DailyCrawlingService:
         if match:
             return int(match.group(1))
         return float('inf')
+    
+    def _remove_exact_duplicates(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        동일한 (url, docId) 조합을 가진 항목 중 하나만 남기고 제거합니다.
+        
+        목록 페이지 핸들러(multi_result)와 직접 input_url이 같은 상세 페이지를
+        중복으로 수집하는 경우를 처리합니다. TF-IDF 유사도 분석의 marked_as_duplicate
+        로직이 이런 정확한 중복을 놓칠 수 있어 사전 단계로 실행합니다.
+        
+        보존 우선순위:
+            1. startdate가 실제 값("1900-01-01"이 아닌)인 항목
+            2. text 길이가 더 긴 항목
+            3. 먼저 등장한 항목
+        """
+        if len(results) < 2:
+            return results
+        
+        seen: Dict[tuple, int] = {}
+        indices_to_remove = set()
+        
+        for idx, item in enumerate(results):
+            url = item.get("url", "")
+            doc_id = item.get("docId", "")
+            
+            if not url or not doc_id:
+                continue
+            
+            key = (url, doc_id)
+            
+            if key not in seen:
+                seen[key] = idx
+                continue
+            
+            prev_idx = seen[key]
+            prev_item = results[prev_idx]
+            
+            prev_startdate = prev_item.get("startdate", "")
+            curr_startdate = item.get("startdate", "")
+            prev_has_real_date = prev_startdate and prev_startdate != JSON_START_DATE
+            curr_has_real_date = curr_startdate and curr_startdate != JSON_START_DATE
+            
+            if curr_has_real_date and not prev_has_real_date:
+                indices_to_remove.add(prev_idx)
+                seen[key] = idx
+            elif not curr_has_real_date and prev_has_real_date:
+                indices_to_remove.add(idx)
+            elif len(item.get("text", "")) > len(prev_item.get("text", "")):
+                indices_to_remove.add(prev_idx)
+                seen[key] = idx
+            else:
+                indices_to_remove.add(idx)
+        
+        if not indices_to_remove:
+            return results
+        
+        for idx in sorted(indices_to_remove, reverse=True):
+            removed = results[idx]
+            logger.debug(
+                f"[_remove_exact_duplicates] Removed: docId={removed.get('docId')}, "
+                f"url={removed.get('url', '')[:60]}, startdate={removed.get('startdate')}"
+            )
+            del results[idx]
+        
+        logger.info(f"[_remove_exact_duplicates] Removed {len(indices_to_remove)} exact duplicates")
+        return results
     
     async def _send_update(self, task_id: str, update_type: str, data: Dict[str, Any]) -> None:
         """

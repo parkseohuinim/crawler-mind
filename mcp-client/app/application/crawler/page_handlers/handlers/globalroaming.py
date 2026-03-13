@@ -19,7 +19,8 @@ from ..utils import (
     format_content, 
     create_markdown, 
     to_mglobalroaming_url,
-    smart_goto
+    smart_goto,
+    launch_chromium,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ async def handle_roaming_notice(
     logger.info(f"🔗 Roaming notice detail: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -244,7 +245,7 @@ async def handle_globalroaming_notice_main(
     cutoff_date = datetime.now() - timedelta(days=365)
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -377,7 +378,168 @@ async def handle_globalroaming_notice_main(
     }
 
 
+async def handle_globalroaming_product_main(
+    url: str,
+    fclient: Any,
+    menu: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    글로벌로밍 상품 메인 페이지 처리 (데이터/음성 등)
+    - 탭별 .prodBox (display:none) 를 모두 노출
+    - .prodList li a[href] 에서 개별 상품 링크를 수집
+    - 각 상품 상세 페이지를 fclient.scrape() 로 추출
+    """
+    logger.info(f"🔗 Global roaming product main: {url}")
+
+    from urllib.parse import urljoin
+
+    base_url = re.match(r'(https?://[^/]+)', url)
+    base_origin = base_url.group(1) if base_url else "http://globalroaming.kt.com"
+
+    async with async_playwright() as p:
+        browser = await launch_chromium(p)
+        context = await browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/122.0.0.0 Safari/537.36",
+        )
+        page = await context.new_page()
+
+        try:
+            response = await smart_goto(
+                page, url,
+                wait_for_selector=".prodList",
+                timeout=60000,
+                selector_timeout=15000,
+            )
+            status_code = response.status if response else None
+            if status_code and status_code >= 400:
+                logger.error(f"❌ HTTP {status_code}: {url}")
+
+            # 모든 .prodBox display:none 해제
+            await page.evaluate("""() => {
+                document.querySelectorAll('.prodBox').forEach(el => {
+                    el.style.display = 'block';
+                    el.style.visibility = 'visible';
+                });
+            }""")
+            await page.wait_for_timeout(500)
+
+            # .prodList 안의 링크 + 상품명 수집
+            product_links = await page.evaluate("""(baseOrigin) => {
+                const results = [];
+                const seen = new Set();
+                document.querySelectorAll('.prodList li > a[href]').forEach(a => {
+                    const href = a.getAttribute('href') || '';
+                    if (!href || href.startsWith('javascript')) return;
+                    const name = (a.textContent || '').trim();
+                    const fullUrl = href.startsWith('http')
+                        ? href
+                        : baseOrigin + (href.startsWith('/') ? '' : '/') + href;
+                    if (!seen.has(fullUrl)) {
+                        seen.add(fullUrl);
+                        results.push({ name, url: fullUrl });
+                    }
+                });
+                return results;
+            }""", base_origin)
+
+            await browser.close()
+        except Exception as e:
+            await browser.close()
+            logger.error(f"❌ Playwright error: {str(e)}")
+            return {
+                "menus": [], "datas": [],
+                "total_processed": 0,
+                "status": "error",
+                "message": f"메인 페이지 처리 실패: {str(e)}",
+            }
+
+    if not product_links:
+        logger.warning("⚠️ No product links found")
+        return {
+            "menus": [], "datas": [],
+            "total_processed": 0,
+            "status": "completed",
+            "message": "상품 링크를 찾지 못했습니다",
+        }
+
+    logger.info(f"🔍 Found {len(product_links)} product links")
+
+    menus, datas = [], []
+    consecutive_errors = 0
+    max_consecutive_errors = 3
+
+    for idx, prod in enumerate(product_links, 1):
+        prod_url = prod["url"]
+        prod_name = prod["name"] or "unknown"
+
+        logger.info(f"🔍 [{idx}/{len(product_links)}] Scraping: {prod_name} ({prod_url})")
+
+        try:
+            result = await asyncio.wait_for(
+                fclient.scrape(prod_url),
+                timeout=120,
+            )
+            consecutive_errors = 0
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ Timeout (120s): {prod_url}")
+            consecutive_errors += 1
+            if consecutive_errors >= max_consecutive_errors:
+                logger.error(f"❌ Stopped: {max_consecutive_errors} consecutive failures")
+                break
+            continue
+        except Exception as e:
+            logger.warning(f"⚠️ Scrape failed: {prod_url} - {str(e)}")
+            consecutive_errors += 1
+            if consecutive_errors >= max_consecutive_errors:
+                break
+            continue
+
+        if not result.get("success"):
+            logger.warning(f"⚠️ Scrape unsuccessful: {prod_url}")
+            consecutive_errors += 1
+            if consecutive_errors >= max_consecutive_errors:
+                break
+            continue
+
+        title = result.get("title") or prod_name
+        murl = to_mglobalroaming_url(prod_url)
+        menu_entry = f"{menu}^{title}" if menu else title
+
+        menus.append({"menu": menu_entry, "url": prod_url, "murl": murl})
+        datas.append({
+            "url": prod_url,
+            "murl": murl,
+            "title": title,
+            "markdown": result.get("markdown", ""),
+            "html": result.get("html", ""),
+            "startdate": "1900-01-01",
+            "enddate": "2999-12-31",
+            "special_processed": True,
+            "playwright_processed": False,
+        })
+
+        logger.info(f"✅ [{idx}/{len(product_links)}] Done: {title}")
+
+    logger.info(f"✅ Global roaming product main completed: {len(datas)} items")
+
+    return {
+        "menus": menus,
+        "datas": datas,
+        "total_processed": len(datas),
+        "status": "completed",
+        "message": f"총 {len(datas)}개 로밍 상품 처리 완료",
+    }
+
+
 # 핸들러 등록
+register_page_handler(
+    r'https?://globalroaming\.kt\.com/product/(?:data|voice)/main\.asp',
+    handle_globalroaming_product_main
+)
+
 register_page_handler(
     r'https?://globalroaming\.kt\.com/news/list\.asp(?:\?.*)?$',
     handle_globalroaming_notice_main

@@ -10,10 +10,11 @@ import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Browser
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
+from ..utils import launch_chromium, safe_goto
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,14 @@ def _to_murl(u: str) -> str:
 async def handle_product_detail(
     url: str, 
     fclient: Any = None, 
-    menu: Optional[str] = None
+    menu: Optional[str] = None,
+    browser: Optional[Browser] = None
 ) -> Optional[Dict[str, Any]]:
     """
     상품 상세 페이지 처리 핸들러
+    
+    browser가 전달되면 해당 브라우저의 새 페이지 사용 (브라우저 재사용).
+    additional_details 재귀 호출 시 동일 브라우저 사용.
     """
     logger.info(f"🔗 Product detail: {url}")
     
@@ -43,27 +48,40 @@ async def handle_product_detail(
     
     item_code = m.group(1)
     max_retries = 3
-    base_timeout = 60000
+    # domcontentloaded + wait_for_selector로 networkidle 대기 완화
+    goto_configs = [
+        ("domcontentloaded", 35000, 3000),
+        ("load", 50000, 5000),
+        ("domcontentloaded", 60000, 7000),
+    ]
+    
+    # browser가 닫혔을 때 fallback: 자체 브라우저 생성
+    use_passed_browser = bool(browser)
     
     for attempt in range(max_retries):
         try:
-            if attempt == 0:
-                wait_until = "domcontentloaded"
-                timeout = 30000
-                extra_wait = 3000
-            elif attempt == 1:
-                wait_until = "load"
-                timeout = 45000
-                extra_wait = 5000
-            else:
-                wait_until = "networkidle"
-                timeout = base_timeout
-                extra_wait = 7000
+            wait_until, timeout, extra_wait = goto_configs[min(attempt, len(goto_configs) - 1)]
             
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
-                
+            if use_passed_browser and browser:
+                try:
+                    browser_to_use = browser
+                    page = await browser.new_page()
+                    playwright = None
+                except Exception as e:
+                    if "has been closed" in str(e).lower() or "target" in str(e).lower():
+                        logger.warning(f"⚠️ Passed browser closed, falling back to own browser: {e}")
+                        use_passed_browser = False
+                        playwright = await async_playwright().start()
+                        browser_to_use = await launch_chromium(playwright)
+                        page = await browser_to_use.new_page()
+                    else:
+                        raise
+            else:
+                playwright = await async_playwright().start()
+                browser_to_use = await launch_chromium(playwright)
+                page = await browser_to_use.new_page()
+            
+            try:
                 response = await page.goto(url, wait_until=wait_until, timeout=timeout)
                 
                 # 상품 상세 페이지 콘텐츠 대기
@@ -282,9 +300,12 @@ async def handle_product_detail(
                                 clean_name = clean_name.strip()
                                 
                                 detail_url = link_info['href']
-                                sub_result = await handle_product_detail(detail_url, fclient=fclient, menu=menu)
+                                sub_result = await handle_product_detail(
+                                    detail_url, fclient=fclient, menu=menu,
+                                    browser=browser_to_use
+                                )
                                 
-                                if sub_result:
+                                if sub_result and not sub_result.get("_failed"):
                                     sub_result['parent_product_name'] = clean_name
                                     sub_result['parent_url'] = url
                                     additional_details.append(sub_result)
@@ -332,33 +353,38 @@ async def handle_product_detail(
                     logger.error(f"❌ Content failed: {str(e)}")
                     markdown_text = "콘텐츠 처리 실패"
 
-                await browser.close()
-                
-                logger.info(f"✅ Product detail done: '{title}'")
-                
-                return {
-                    "url": url,
-                    "murl": _to_murl(url),
-                    "title": title,
-                    "markdown": markdown_text,
-                    "html": combined_html or "",
-                    "item_code": item_code,
-                    "accordion_count": len(accordion_triggers),
-                    "content_length": len(combined_html) if combined_html else 0,
-                    "recommendations": recommendations or [],
-                    "additional_details": additional_details or [],
-                    "special_processed": True,
-                    "playwright_processed": True
-                }
+            finally:
+                await page.close()
+                if playwright is not None:
+                    await browser_to_use.close()
+                    await playwright.stop()
+            
+            logger.info(f"✅ Product detail done: '{title}'")
+            
+            return {
+                "url": url,
+                "murl": _to_murl(url),
+                "title": title,
+                "markdown": markdown_text,
+                "html": combined_html or "",
+                "item_code": item_code,
+                "accordion_count": len(accordion_triggers),
+                "content_length": len(combined_html) if combined_html else 0,
+                "recommendations": recommendations or [],
+                "additional_details": additional_details or [],
+                "special_processed": True,
+                "playwright_processed": True
+            }
                 
         except Exception as e:
             if attempt < max_retries - 1:
-                logger.warning(f"⚠️ Attempt {attempt + 1} failed: {str(e)}")
+                logger.warning(f"⚠️ [wdic] Attempt {attempt + 1} failed: {url} - {str(e)}")
                 await asyncio.sleep(5)
                 continue
             else:
-                logger.error(f"❌ Product detail failed: {str(e)}")
-                return None
+                err_msg = str(e)
+                logger.error(f"❌ [wdic] Product detail failed: {url} - {err_msg}", exc_info=True)
+                return {"_failed": True, "url": url, "error": err_msg}
 
 
 async def handle_wdic_mobile_list(
@@ -374,9 +400,29 @@ async def handle_wdic_mobile_list(
     base_host = 'https://product.kt.com'
     menus, datas = [], []
 
-    async def _capture_list_snapshot(page, base_menu: str = "", tab_text: str = "", sub_filter_text: str = ""):
+    async def _safe_evaluate(page, script: str, default=None, max_retries: int = 3):
+        """Execution context destroyed 시 재시도하는 page.evaluate 래퍼"""
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                return await page.evaluate(script)
+            except Exception as e:
+                last_err = e
+                err_str = str(e).lower()
+                if ("execution context was destroyed" in err_str or "navigation" in err_str) and attempt < max_retries - 1:
+                    try:
+                        await page.wait_for_load_state("domcontentloaded", timeout=3000)
+                    except Exception:
+                        pass
+                    await page.wait_for_timeout(800)
+                    continue
+                raise
+        return default
+
+    async def _capture_list_snapshot(page, base_menu: str = "", tab_text: str = "", sub_filter_text: str = "", safe_eval=None):
+        eval_fn = safe_eval if safe_eval else (lambda s: page.evaluate(s))
         try:
-            html = await page.evaluate("""
+            html = await eval_fn("""
                 () => {
                     const root = document.querySelector('#cfmClContents') || document.body;
                     if (!root) return '';
@@ -411,15 +457,16 @@ async def handle_wdic_mobile_list(
         except Exception as e:
             logger.debug(f"🔍 Snapshot failed: {str(e)}")
 
-    async def _click_more_until_exhausted(page) -> int:
+    async def _click_more_until_exhausted(page, safe_eval=None) -> int:
+        eval_fn = safe_eval if safe_eval else (lambda s: page.evaluate(s))
         clicks = 0
         guard = 0
         while guard < 50:
             guard += 1
             try:
-                before = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                before = await eval_fn("document.querySelectorAll('.plan-list-area .plan-list li').length")
                 
-                clicked = await page.evaluate(r"""
+                clicked = await eval_fn(r"""
                     () => {
                         const btn = document.querySelector('.btn-more');
                         if (!btn) return false;
@@ -438,14 +485,14 @@ async def handle_wdic_mobile_list(
                 clicks += 1
                 await page.wait_for_timeout(1200)
 
-                after = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                after = await eval_fn("document.querySelectorAll('.plan-list-area .plan-list li').length")
 
                 if after <= before:
                     await page.wait_for_timeout(1500)
-                    after = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                    after = await eval_fn("document.querySelectorAll('.plan-list-area .plan-list li').length")
 
                 if after <= before:
-                    btn_check = await page.evaluate(r"""
+                    btn_check = await eval_fn(r"""
                         () => {
                             const b = document.querySelector('.btn-more');
                             if (!b) return false;
@@ -456,13 +503,14 @@ async def handle_wdic_mobile_list(
                     """)
                     if not btn_check:
                         break
-            except:
+            except Exception:
                 break
         return clicks
 
-    async def _ensure_filter_all(page):
+    async def _ensure_filter_all(page, safe_eval=None):
+        eval_fn = safe_eval if safe_eval else (lambda s: page.evaluate(s))
         try:
-            changed = await page.evaluate(r"""
+            changed = await eval_fn(r"""
                 () => {
                     function isVisible(el){
                         if(!el) return false;
@@ -481,31 +529,22 @@ async def handle_wdic_mobile_list(
             """)
             if changed:
                 await page.wait_for_timeout(600)
-        except:
+        except Exception:
             pass
 
-    async def _extract_items(page) -> list:
-        items = await page.evaluate("""
+    async def _extract_items(page, safe_eval=None) -> list:
+        eval_fn = safe_eval if safe_eval else (lambda s: page.evaluate(s))
+        items = await eval_fn("""
             () => {
                 const results = [];
                 const anchors = Array.from(document.querySelectorAll('.plan-list-area .btns a[href*="productDetail"]'));
 
-                function normRel(href){
-                    try{
+                function toAbs(href){
+                    try {
                         const a = document.createElement('a');
                         a.href = href;
-                        // ItemCode, CateCode, filter_code 유지 (option_code, pageSize 제거)
-                        const params = new URLSearchParams(a.search);
-                        const essentialParams = new URLSearchParams();
-                        if (params.has('ItemCode')) essentialParams.set('ItemCode', params.get('ItemCode'));
-                        if (params.has('CateCode')) essentialParams.set('CateCode', params.get('CateCode'));
-                        if (params.has('filter_code')) essentialParams.set('filter_code', params.get('filter_code'));
-                        const cleanSearch = essentialParams.toString() ? '?' + essentialParams.toString() : '';
-                        const rel = `${a.pathname}${cleanSearch}`;
-                        return rel.startsWith('/wDic/') ? rel : (rel.startsWith('/') ? rel : `/wDic/${rel}`);
-                    }catch(e){
-                        return href.startsWith('/wDic/') ? href : (href.startsWith('/') ? href : `/wDic/${href}`);
-                    }
+                        return a.href;
+                    } catch(e) { return href; }
                 }
 
                 function getNearestTitle(anchor){
@@ -558,9 +597,9 @@ async def handle_wdic_mobile_list(
                 anchors.forEach(a => {
                     const href = a.getAttribute('href') || a.href || '';
                     if (!href || href === '#' || href.startsWith('javascript:')) return;
-                    const rel = normRel(href);
+                    const fullUrl = toAbs(href);
                     const title = getNearestTitle(a);
-                    results.push({ title: title || '', relHref: rel });
+                    results.push({ title: title || '', relHref: fullUrl });
                 });
 
                 return results;
@@ -569,16 +608,23 @@ async def handle_wdic_mobile_list(
         return items or []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         page = await browser.new_page()
-        response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        response = await safe_goto(
+            page, url,
+            wait_for_selector='.plan-list-area .plan-list li, ul.N-compare-suggest-list li',
+            base_timeout=60000, retries=2
+        )
+        if response is None:
+            await browser.close()
+            return {
+                "menus": [],
+                "datas": [],
+                "total_processed": 0,
+                "status": "completed",
+                "message": "상품 목록 페이지 로드 실패 (타임아웃)"
+            }
         
-        # 상품 목록 대기
-        try:
-            await page.wait_for_selector('.plan-list-area .plan-list li, ul.N-compare-suggest-list li', timeout=15000)
-            logger.info("✅ Product list loaded")
-        except Exception as e:
-            logger.warning(f"⚠️ Product list not loaded: {e}")
         await page.wait_for_timeout(1200)
 
         status_code = response.status if response else None
@@ -590,7 +636,10 @@ async def handle_wdic_mobile_list(
         except:
             pass
 
-        tabs = await page.evaluate("""
+        async def _eval(script):
+            return await _safe_evaluate(page, script)
+
+        tabs = await _eval("""
             () => {
                 const arr = [];
                 const ulSelectors = ['ul.ui-tab-list', 'ul.red-select'];
@@ -627,8 +676,8 @@ async def handle_wdic_mobile_list(
         detail_targets = []
 
         try:
-            await _capture_list_snapshot(page, base_menu=(menu or "").strip())
-        except:
+            await _capture_list_snapshot(page, base_menu=(menu or "").strip(), safe_eval=_eval)
+        except Exception:
             pass
 
         for tab in tabs:
@@ -636,9 +685,9 @@ async def handle_wdic_mobile_list(
                 li_id = tab.get('liId')
                 if li_id is not None:
                     # 클릭 전 리스트 개수 기록
-                    prev_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                    prev_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                     
-                    tab_clicked = await page.evaluate(f"""
+                    tab_clicked = await _eval(f"""
                         () => {{
                             const ulSelectors = ['ul.ui-tab-list', 'ul.red-select'];
                             let ul = null;
@@ -661,23 +710,29 @@ async def handle_wdic_mobile_list(
                         }}
                     """)
                     if tab_clicked:
-                        # 네트워크가 안정될 때까지 대기
+                        # 1) 네트워크가 안정될 때까지 대기
                         try:
                             await page.wait_for_load_state('networkidle', timeout=5000)
                         except Exception:
                             pass
+                        # 2) domcontentloaded로 컨텍스트 안정화
+                        try:
+                            await page.wait_for_load_state('domcontentloaded', timeout=3000)
+                        except Exception:
+                            pass
+                        await page.wait_for_timeout(500)
                         
                         # 추가로 리스트 업데이트 확인 (최대 3초)
                         for _ in range(6):
                             await page.wait_for_timeout(500)
-                            new_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                            new_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                             if new_count > 0:
                                 break
 
-                await _ensure_filter_all(page)
+                await _ensure_filter_all(page, safe_eval=_eval)
                 await page.wait_for_timeout(800)
 
-                sub_filters = await page.evaluate("""
+                sub_filters = await _eval("""
                     () => {
                         const root = document.querySelector('.type-sub-item');
                         if (!root) return [];
@@ -699,10 +754,10 @@ async def handle_wdic_mobile_list(
                         
                         try:
                             # 서브 필터 클릭 전 현재 리스트 개수 기록
-                            prev_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                            prev_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                             
                             # 서브 필터 클릭
-                            sub_clicked = await page.evaluate(f"""
+                            sub_clicked = await _eval(f"""
                                 () => {{
                                     const root = document.querySelector('.type-sub-item');
                                     if (!root) return false;
@@ -715,21 +770,27 @@ async def handle_wdic_mobile_list(
                                 }}
                             """)
                             if sub_clicked:
-                                # 네트워크가 안정될 때까지 대기 (최대 5초)
+                                # 1) 네트워크가 안정될 때까지 대기 (최대 5초)
                                 try:
                                     await page.wait_for_load_state('networkidle', timeout=5000)
                                 except Exception:
                                     pass
+                                # 2) domcontentloaded로 컨텍스트 안정화
+                                try:
+                                    await page.wait_for_load_state('domcontentloaded', timeout=3000)
+                                except Exception:
+                                    pass
+                                await page.wait_for_timeout(500)
                                 
                                 # 추가로 리스트 업데이트 확인 (최대 3초)
                                 for _ in range(6):
                                     await page.wait_for_timeout(500)
-                                    new_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                                    new_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                                     if new_count > 0 and new_count != prev_count:
                                         break
 
-                            clicks = await _click_more_until_exhausted(page)
-                            items = await _extract_items(page)
+                            clicks = await _click_more_until_exhausted(page, safe_eval=_eval)
+                            items = await _extract_items(page, safe_eval=_eval)
                             
                             # 현재 탭+서브필터의 목록 화면도 캡처
                             try:
@@ -737,12 +798,13 @@ async def handle_wdic_mobile_list(
                                     page,
                                     base_menu=(menu or "").strip(),
                                     tab_text=tab.get('text', '').strip(),
-                                    sub_filter_text=sub_filter.get('text', '').strip()
+                                    sub_filter_text=sub_filter.get('text', '').strip(),
+                                    safe_eval=_eval
                                 )
                             except Exception:
                                 pass
 
-                            li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                            li_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                             
                             # 상세링크 0개일 때 방어 로직: 재시도
                             if len(items) == 0:
@@ -757,7 +819,7 @@ async def handle_wdic_mobile_list(
                                         pass
                                     # 서브 필터 다시 클릭
                                     if sub_clicked:
-                                        sub_clicked = await page.evaluate(f"""
+                                        sub_clicked = await _eval(f"""
                                             () => {{
                                                 const root = document.querySelector('.type-sub-item');
                                                 if (!root) return false;
@@ -771,9 +833,9 @@ async def handle_wdic_mobile_list(
                                         """)
                                         if sub_clicked:
                                             await page.wait_for_timeout(2000)
-                                    clicks = await _click_more_until_exhausted(page)
-                                    items = await _extract_items(page)
-                                    li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                                    clicks = await _click_more_until_exhausted(page, safe_eval=_eval)
+                                    items = await _extract_items(page, safe_eval=_eval)
+                                    li_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                                 elif li_count > 0:
                                     # 리스트는 있지만 상세링크가 없는 경우: 페이지 로드 대기 후 재시도
                                     logger.warning(f"⚠️  상세링크 0개 감지 (li={li_count}), 페이지 로드 재시도 중...")
@@ -782,7 +844,7 @@ async def handle_wdic_mobile_list(
                                         await page.wait_for_load_state('networkidle', timeout=5000)
                                     except Exception:
                                         pass
-                                    items = await _extract_items(page)
+                                    items = await _extract_items(page, safe_eval=_eval)
                                 
                                 if len(items) == 0:
                                     logger.error(f"❌ 재시도 후에도 상세링크 0개: 탭='{tab.get('text','')}', 서브필터='{sub_filter.get('text','')}', clicks={clicks}, li={li_count}")
@@ -803,20 +865,21 @@ async def handle_wdic_mobile_list(
                             continue
                 else:
                     # 서브 필터 없으면 기존 로직
-                    clicks = await _click_more_until_exhausted(page)
-                    items = await _extract_items(page)
+                    clicks = await _click_more_until_exhausted(page, safe_eval=_eval)
+                    items = await _extract_items(page, safe_eval=_eval)
                     
                     # 현재 탭의 목록 화면도 캡처
                     try:
                         await _capture_list_snapshot(
                             page,
                             base_menu=(menu or "").strip(),
-                            tab_text=tab.get('text', '').strip()
+                            tab_text=tab.get('text', '').strip(),
+                            safe_eval=_eval
                         )
                     except Exception:
                         pass
 
-                    li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                    li_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                     
                     # 상세링크 0개일 때 방어 로직: 재시도
                     if len(items) == 0:
@@ -829,9 +892,9 @@ async def handle_wdic_mobile_list(
                                 await page.wait_for_load_state('networkidle', timeout=5000)
                             except Exception:
                                 pass
-                            clicks = await _click_more_until_exhausted(page)
-                            items = await _extract_items(page)
-                            li_count = await page.evaluate("document.querySelectorAll('.plan-list-area .plan-list li').length")
+                            clicks = await _click_more_until_exhausted(page, safe_eval=_eval)
+                            items = await _extract_items(page, safe_eval=_eval)
+                            li_count = await _eval("document.querySelectorAll('.plan-list-area .plan-list li').length")
                         elif li_count > 0:
                             # 리스트는 있지만 상세링크가 없는 경우: 페이지 로드 대기 후 재시도
                             logger.warning(f"⚠️  상세링크 0개 감지 (li={li_count}), 페이지 로드 재시도 중...")
@@ -840,7 +903,7 @@ async def handle_wdic_mobile_list(
                                 await page.wait_for_load_state('networkidle', timeout=5000)
                             except Exception:
                                 pass
-                            items = await _extract_items(page)
+                            items = await _extract_items(page, safe_eval=_eval)
                         
                         if len(items) == 0:
                             logger.error(f"❌ 재시도 후에도 상세링크 0개: 탭='{tab.get('text','')}', clicks={clicks}, li={li_count}")
@@ -967,26 +1030,34 @@ async def handle_wdic_mobile_list(
                     logger.info(f"   {tab}: {after}")
         
         detail_targets = unique_targets
+        failed_targets = []
 
         # 상세 처리
         for i, target in enumerate(detail_targets, 1):
             detail_url = urljoin(base_host, target['relHref'])
-            try:
-                result = await handle_product_detail(detail_url, fclient, menu)
-                if not result:
-                    continue
+            base_menu_str = (menu or '').strip()
+            tab_prefix = target.get('tab', '').strip()
+            sub_filter_name = target.get('sub_filter', '').strip()
+            title_suffix = target.get('title', '').strip()
+            final_menu = base_menu_str
+            if tab_prefix:
+                final_menu = f"{final_menu}^{tab_prefix}" if final_menu else tab_prefix
+            if sub_filter_name:
+                final_menu = f"{final_menu}^{sub_filter_name}" if final_menu else sub_filter_name
+            if title_suffix:
+                final_menu = f"{final_menu}^{title_suffix}" if final_menu else title_suffix
 
-                base_menu_str = (menu or '').strip()
-                tab_prefix = target.get('tab', '').strip()
-                sub_filter_name = target.get('sub_filter', '').strip()
-                title_suffix = target.get('title', '').strip()
-                final_menu = base_menu_str
-                if tab_prefix:
-                    final_menu = f"{final_menu}^{tab_prefix}" if final_menu else tab_prefix
-                if sub_filter_name:
-                    final_menu = f"{final_menu}^{sub_filter_name}" if final_menu else sub_filter_name
-                if title_suffix:
-                    final_menu = f"{final_menu}^{title_suffix}" if final_menu else title_suffix
+            try:
+                result = await handle_product_detail(detail_url, fclient, menu, browser=browser)
+                if not result:
+                    failed_targets.append({"url": detail_url, "error": "추출 실패 (handle_product_detail 반환 None)", "menu": final_menu})
+                    logger.warning(f"⚠️ [wdic] 상세 추출 실패: {detail_url} (menu={final_menu})")
+                    continue
+                if isinstance(result, dict) and result.get("_failed"):
+                    err_msg = result.get("error", "알 수 없음")
+                    failed_targets.append({"url": detail_url, "error": err_msg, "menu": final_menu})
+                    logger.warning(f"⚠️ [wdic] 상세 추출 실패: {detail_url} - {err_msg[:150]}")
+                    continue
 
                 menus.append({'menu': final_menu or (result.get('title') or ''), 'url': detail_url})
                 datas.append(result)
@@ -1013,16 +1084,21 @@ async def handle_wdic_mobile_list(
                 
                 logger.info(f"[{i}/{len(detail_targets)}] 상세 처리 완료: {detail_url}")
             except Exception as e:
-                logger.error(f"상세 처리 중 오류: {detail_url} - {str(e)}")
+                logger.error(f"❌ [wdic] 상세 처리 중 오류: {detail_url} - {str(e)}", exc_info=True)
+                failed_targets.append({"url": detail_url, "error": str(e), "menu": final_menu})
                 continue
 
         await browser.close()
 
-    logger.info(f"✅ wDic 목록 처리 완료: {len(datas)}개 아이템 수집")
+    logger.info(f"✅ wDic 목록 처리 완료: {len(datas)}개 아이템 수집 (실패 {len(failed_targets)}개)")
+    if failed_targets:
+        for ft in failed_targets:
+            logger.warning(f"   ⚠️ 실패: {ft.get('url', '')[:80]}... | menu={ft.get('menu', '')} | error={str(ft.get('error', ''))[:100]}")
 
     return {
         'menus': menus,
         'datas': datas,
+        'failed_targets': failed_targets,
         'metadata': {
             'url': url,
             'total_items': len(datas),

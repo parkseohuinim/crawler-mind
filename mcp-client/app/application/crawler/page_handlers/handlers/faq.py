@@ -13,6 +13,7 @@ from playwright.async_api import async_playwright
 from markdownify import markdownify as md
 
 from ..handler_registry import register_page_handler
+from ..utils import launch_chromium
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ async def handle_movie_customer_center_faq_playwright(
     # 기본 페이지 내용 추출
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await launch_chromium(p)
             page = await browser.new_page()
             
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
@@ -220,7 +221,7 @@ async def handle_ermsweb_faq_all_playwright(
                 extra_wait = 8000
             
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
+                browser = await launch_chromium(p)
                 page = await browser.new_page()
                 
                 response = await page.goto(url, wait_until=wait_until, timeout=timeout)

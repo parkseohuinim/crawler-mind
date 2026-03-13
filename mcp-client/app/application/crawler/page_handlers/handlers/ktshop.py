@@ -6,6 +6,7 @@ KT Shop 팝업 추출, 모바일 상품 목록, 액세서리, 기획전 등 처�
 
 import logging
 import re
+import time
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urljoin
 from asyncio import TimeoutError as AsyncTimeoutError
@@ -15,7 +16,7 @@ from markdownify import markdownify as md
 from bs4 import BeautifulSoup
 
 from ..handler_registry import register_page_handler
-from ..utils import to_mshop_url, sanitize_filename, smart_goto
+from ..utils import to_mshop_url, sanitize_filename, smart_goto, safe_goto, launch_chromium
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,11 @@ async def handle_ktshop_popup_extractor(
     - layerOpen('#id', this) 형태의 트리거
     - javascript:void(0) + class 'plus' 트리거
     """
+    t_start = time.perf_counter()
     logger.info(f"🔗 KT Shop popup: {url}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -41,7 +43,9 @@ async def handle_ktshop_popup_extractor(
         page = await context.new_page()
 
         try:
+            t_goto = time.perf_counter()
             response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            logger.info(f"📄 [popup] page.goto 완료: {time.perf_counter() - t_goto:.1f}s, status={response.status if response else None}")
             
             status_code = response.status if response else None
             if status_code and status_code >= 400:
@@ -50,17 +54,18 @@ async def handle_ktshop_popup_extractor(
             # 동적 로딩 대기: 페이지 콘텐츠가 로드될 때까지 대기
             try:
                 await page.wait_for_load_state('networkidle', timeout=5000)
-            except Exception:
-                pass
+                logger.debug(f"📄 [popup] networkidle 완료")
+            except Exception as e:
+                logger.debug(f"📄 [popup] networkidle skip: {e}")
             await page.wait_for_timeout(2000)
 
             # 트리거 수집
+            t_triggers = time.perf_counter()
             hash_triggers = await page.query_selector_all("*[onclick*='layerOpen(']")
             plus_triggers = await page.query_selector_all(
                 "a[href^='javascript:void(0)'].plus, .plus[href^='javascript:void(0)'], *[onclick*='showDeviceModel('], *[onclick*='showDeviceInfo(']"
             )
-
-            logger.info(f"🔍 Triggers: layerOpen={len(hash_triggers)}, plus={len(plus_triggers)}")
+            logger.info(f"🔍 [popup] Triggers: layerOpen={len(hash_triggers)}, plus={len(plus_triggers)} (수집 {time.perf_counter() - t_triggers:.1f}s)")
 
             async def _hide_overlays():
                 try:
@@ -133,7 +138,9 @@ async def handle_ktshop_popup_extractor(
                     logger.warning(f"⚠️ Insert failed: {str(e)}")
 
             # layerOpen 트리거 처리
+            layer_ok, layer_skip, layer_fail = 0, 0, 0
             for idx, a in enumerate(hash_triggers, 1):
+                t_loop = time.perf_counter()
                 try:
                     onclick_text = await a.get_attribute('onclick')
                     target_id = None
@@ -144,8 +151,11 @@ async def handle_ktshop_popup_extractor(
                     
                     try:
                         await a.click()
-                    except Exception:
+                        click_ok = True
+                    except Exception as click_err:
                         await page.evaluate("el => el.click()", a)
+                        click_ok = False
+                        logger.debug(f"📌 [popup] layerOpen[{idx}/{len(hash_triggers)}] click fallback: {click_err}")
                     await page.wait_for_timeout(900)
 
                     popup_html = ""
@@ -161,14 +171,19 @@ async def handle_ktshop_popup_extractor(
                                 )
                                 await page.wait_for_timeout(200)
                                 popup_html = await target_el.inner_html()
-                        except Exception:
-                            pass
+                        except Exception as ext_err:
+                            logger.debug(f"📌 [popup] layerOpen[{idx}] target_id={target_id} 추출 실패: {ext_err}")
                     
                     if not popup_html:
                         popup_html = await _wait_for_visible_popup_html(5000)
 
                     if popup_html:
                         await _insert_after_trigger(a, popup_html)
+                        layer_ok += 1
+                        logger.info(f"📌 [popup] layerOpen[{idx}/{len(hash_triggers)}] target={target_id or '?'} html={len(popup_html)}chars {time.perf_counter() - t_loop:.1f}s")
+                    else:
+                        layer_skip += 1
+                        logger.info(f"📌 [popup] layerOpen[{idx}/{len(hash_triggers)}] target={target_id or '?'} popup 빈값 {time.perf_counter() - t_loop:.1f}s")
 
                     await _hide_overlays()
                     try:
@@ -177,10 +192,14 @@ async def handle_ktshop_popup_extractor(
                         pass
                     await page.wait_for_timeout(200)
                 except Exception as e:
-                    logger.warning(f"⚠️ layerOpen {idx} failed: {str(e)}")
+                    layer_fail += 1
+                    logger.warning(f"⚠️ [popup] layerOpen[{idx}/{len(hash_triggers)}] 실패: {str(e)}", exc_info=True)
 
             # plus 트리거 처리
+            plus_ok, plus_skip, plus_fail = 0, 0, 0
+            logger.info(f"📌 [popup] layerOpen 완료: ok={layer_ok} skip={layer_skip} fail={layer_fail}")
             for idx, a in enumerate(plus_triggers, 1):
+                t_loop = time.perf_counter()
                 try:
                     onclick_text = (await a.get_attribute('onclick')) or ''
                     preferred_selectors = []
@@ -191,14 +210,20 @@ async def handle_ktshop_popup_extractor(
                     
                     try:
                         await a.click()
-                    except Exception:
+                    except Exception as click_err:
                         await page.evaluate("el => el.click()", a)
+                        logger.debug(f"📌 [popup] plus[{idx}] click fallback: {click_err}")
                     await page.wait_for_timeout(900)
 
                     popup_html = await _wait_for_visible_popup_html(5000, preferred_selectors)
 
                     if popup_html:
                         await _insert_after_trigger(a, popup_html)
+                        plus_ok += 1
+                        logger.info(f"📌 [popup] plus[{idx}/{len(plus_triggers)}] html={len(popup_html)}chars {time.perf_counter() - t_loop:.1f}s")
+                    else:
+                        plus_skip += 1
+                        logger.info(f"📌 [popup] plus[{idx}/{len(plus_triggers)}] popup 빈값 {time.perf_counter() - t_loop:.1f}s")
 
                     await _hide_overlays()
                     try:
@@ -207,7 +232,8 @@ async def handle_ktshop_popup_extractor(
                         pass
                     await page.wait_for_timeout(200)
                 except Exception as e:
-                    logger.warning(f"⚠️ plus {idx} failed: {str(e)}")
+                    plus_fail += 1
+                    logger.warning(f"⚠️ [popup] plus[{idx}/{len(plus_triggers)}] 실패: {str(e)}", exc_info=True)
 
             # 정리
             try:
@@ -235,14 +261,19 @@ async def handle_ktshop_popup_extractor(
 
             try:
                 html_content = await page.eval_on_selector("#cfmClContents", "el => el.outerHTML")
-            except Exception:
+                logger.info(f"📄 [popup] #cfmClContents 추출 성공: {len(html_content)}chars")
+            except Exception as ext_err:
                 html_content = await page.content()
+                logger.info(f"📄 [popup] #cfmClContents 없음, page.content 사용: {len(html_content)}chars ({ext_err})")
 
             title = await page.title()
             await browser.close()
+            elapsed = time.perf_counter() - t_start
+            logger.info(f"✅ [popup] 완료: layerOpen ok={layer_ok} skip={layer_skip} fail={layer_fail} | plus ok={plus_ok} skip={plus_skip} fail={plus_fail} | 총 {elapsed:.1f}s")
 
         except Exception as e:
-            logger.error(f"❌ Popup failed: {str(e)}")
+            elapsed = time.perf_counter() - t_start
+            logger.error(f"❌ [popup] Popup failed ({elapsed:.1f}s): {str(e)}", exc_info=True)
             try:
                 await browser.close()
             except Exception:
@@ -263,7 +294,7 @@ async def handle_ktshop_popup_extractor(
     except Exception:
         markdown_content = ""
 
-    logger.info("✅ Popup done")
+    logger.info(f"✅ Popup done (총 {time.perf_counter() - t_start:.1f}s)")
 
     return {
         "url": url,
@@ -308,22 +339,38 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
     base_title = sanitize_filename(base_title)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         )
         page = await context.new_page()
-        response = await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        response = await safe_goto(page, url, base_timeout=60000, retries=2)
+        if response is None:
+            await browser.close()
+            return {
+                'menus': [],
+                'datas': [],
+                'failed_targets': [{"url": url, "error": "page_load_timeout", "menu": base_menu or "모바일 제품"}],
+                'total_processed': 0,
+                'status': 'completed',
+                'message': "리스트 페이지 로드 실패 (타임아웃)"
+            }
         await page.wait_for_timeout(2500)
 
-        try:
-            await page.wait_for_function(
-                "document.querySelectorAll('.nwProdList input[name=\"prodAttr\"]').length > 0",
-                timeout=20000,
-            )
-        except Exception:
-            logger.warning("⚠️ prodAttr not found")
+        for attempt in range(2):
+            try:
+                await page.wait_for_function(
+                    "document.querySelectorAll('.nwProdList input[name=\"prodAttr\"]').length > 0",
+                    timeout=20000,
+                )
+                break
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(f"⚠️ prodAttr not found, retrying... ({e})")
+                    await page.wait_for_timeout(2000)
+                else:
+                    logger.warning("⚠️ prodAttr not found after retry")
 
         status_code = response.status if response else None
         if status_code and status_code >= 400:
@@ -402,6 +449,7 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
             normalized.append({'name': prodnm, 'url': detail_url, 'prodno': prodno})
 
         logger.info(f"🔍 Normalized: {len(normalized)} items")
+        failed_targets = []
 
         # 각 제품 상세에서 내용 추출
         for idx, prod in enumerate(normalized, 1):
@@ -409,15 +457,19 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                 logger.info(f"🔍 [{idx}/{len(normalized)}] Detail: {prod['name']}")
                 if prod.get('url') and prod['url'] != url:
                     try:
-                        await page.goto(prod['url'], wait_until='domcontentloaded', timeout=60000)
-                        # 상세 페이지 콘텐츠 대기
-                        try:
-                            await page.wait_for_selector('.nwViewProdDetail, #cfmClContents', timeout=10000)
-                        except Exception:
-                            pass
+                        detail_resp = await safe_goto(
+                            page, prod['url'],
+                            wait_for_selector='.nwViewProdDetail, #cfmClContents',
+                            base_timeout=60000, retries=2
+                        )
+                        if detail_resp is None:
+                            raise Exception("상세 페이지 로드 타임아웃")
                         await page.wait_for_timeout(1000)
                     except Exception as _e:
-                        logger.warning(f"⚠️ Navigation failed: {prod['url']}")
+                        menu_name = f"{base_menu}^{prod['name']}" if base_menu else f"Shop^{prod['name']}"
+                        failed_targets.append({"url": prod['url'], "error": f"Navigation failed: {str(_e)}", "menu": menu_name})
+                        logger.warning(f"⚠️ [ktshop] Navigation failed: {prod['url']} - {str(_e)}")
+                        continue
 
                 detail_html = await page.evaluate("""
                     () => {
@@ -592,14 +644,21 @@ async def handle_mobile_products_list(url: str, fclient: Any, menu: Optional[str
                     'murl': to_mshop_url(prod['url'])
                 })
             except Exception as e:
-                logger.warning(f"⚠️ Detail failed: {prod.get('name','unknown')}: {str(e)}")
+                menu_name = f"{base_menu}^{prod['name']}" if base_menu else f"Shop^{prod['name']}"
+                failed_targets.append({"url": prod.get('url', ''), "error": str(e), "menu": menu_name})
+                logger.warning(f"⚠️ [ktshop] Detail failed: {prod.get('name','unknown')} ({prod.get('url','')}) - {str(e)}", exc_info=True)
                 continue
 
         await browser.close()
 
+    logger.info(f"✅ KT Shop 목록 처리 완료: {len(datas)}개 수집 (실패 {len(failed_targets)}개)")
+    if failed_targets:
+        for ft in failed_targets:
+            logger.warning(f"   ⚠️ 실패: {ft.get('url', '')[:80]}... | menu={ft.get('menu', '')} | error={str(ft.get('error', ''))[:100]}")
     return {
         'menus': menus,
         'datas': datas,
+        'failed_targets': failed_targets,
         'total_processed': len(datas),
         'status': 'completed',
         'message': f"총 {len(datas)}개 모바일 제품 처리 완료"
@@ -621,7 +680,7 @@ async def handle_accessory_detail(url: str, fclient: Any, context=None) -> Optio
         status_detail = None
         try:
             try:
-                response_detail = await smart_goto(page, url, wait_for_selector='.ui-prd_tit', timeout=30000)
+                response_detail = await smart_goto(page, url, wait_for_selector='.ui-prd_tit', timeout=45000)
             except Exception:
                 logger.error(f"❌ Detail page timeout")
                 return None
@@ -660,7 +719,7 @@ async def handle_accessory_detail(url: str, fclient: Any, context=None) -> Optio
         return await _process_detail(context)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context_local = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -680,13 +739,13 @@ async def handle_accessory_display_list(url: str, fclient: Any, menu: Optional[s
     seen_prodnos: Set[str] = set()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         )
         page = await context.new_page()
-        response = await smart_goto(page, url, wait_for_selector='ul.ui-access-prdLst', timeout=30000)
+        response = await smart_goto(page, url, wait_for_selector='ul.ui-access-prdLst', timeout=45000)
         status_code = response.status if response else None
 
         async def extract_items() -> List[Dict[str, Any]]:
@@ -808,7 +867,7 @@ async def handle_goodbye_phoneview(url: str, fclient: Any, menu: Optional[str] =
     menus, datas = [], []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
@@ -929,7 +988,7 @@ async def handle_store_plans_list(url: str, fclient: Any, menu: Optional[str] = 
             return ''
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'

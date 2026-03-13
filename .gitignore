@@ -253,3 +253,7 @@ telegram_bot.py
 
 # Result files
 *.json
+*.zip
+
+# Superset
+.superset

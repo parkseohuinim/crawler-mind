@@ -15,7 +15,7 @@ from markdownify import markdownify as md
 from bs4 import BeautifulSoup
 
 from ..handler_registry import register_page_handler
-from ..utils import smart_goto
+from ..utils import smart_goto, launch_chromium
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ async def handle_kt_past_event_detail(
     logger.info(f"KT Past Event detail processing started: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -253,7 +253,7 @@ async def handle_kt_past_event_main(
     logger.info(f"🎯 KT Past Event main processing started: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await launch_chromium(p)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'

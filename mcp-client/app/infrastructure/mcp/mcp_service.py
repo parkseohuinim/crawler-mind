@@ -22,8 +22,17 @@ class MCPService:
     async def initialize(self) -> None:
         """Initialize MCP client connection with retry logic"""
         async with self._connection_lock:
-            if self._client is not None:
+            if self._client is not None and self.is_connected:
                 return
+            
+            # 기존 클라이언트가 있지만 연결이 끊어진 경우 정리
+            if self._client is not None:
+                logger.warning("🔄 Stale MCP client detected, cleaning up...")
+                try:
+                    await self._client.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                self._client = None
             
             last_error = None
             for attempt in range(self._max_retries):
@@ -46,7 +55,7 @@ class MCPService:
                     self._client = None
                     
                     if attempt < self._max_retries - 1:
-                        wait_time = self._retry_delay * (attempt + 1)  # Exponential backoff
+                        wait_time = self._retry_delay * (attempt + 1)
                         logger.info(f"⏳ Waiting {wait_time}s before retry...")
                         await asyncio.sleep(wait_time)
             
@@ -116,7 +125,8 @@ class MCPService:
             logger.error(f"❌ Tool execution failed - {tool_name}: {e}")
             
             # 연결이 끊어진 경우 재연결 시도
-            if "connection" in str(e).lower() or "disconnect" in str(e).lower():
+            err_lower = str(e).lower()
+            if "connect" in err_lower or "disconnect" in err_lower or "client" in err_lower:
                 logger.warning("🔄 Connection lost, attempting to reconnect and retry...")
                 self._client = None
                 

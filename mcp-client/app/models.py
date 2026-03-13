@@ -52,6 +52,8 @@ class FailedItem(BaseModel):
     id: Optional[int] = None
     url: str
     error: str
+    handler_name: Optional[str] = Field(None, description="Handler that processed the URL (for timeout/error traceability)")
+    timeout_seconds: Optional[int] = Field(None, description="Timeout in seconds if failure was due to timeout")
 
 class CrawlingResult(BaseModel):
     """Crawling result model"""

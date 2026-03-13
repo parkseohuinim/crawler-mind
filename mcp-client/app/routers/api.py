@@ -21,6 +21,7 @@ from app.application.menu.menu_service import MenuApplicationService
 from app.presentation.api.rag.rag_router import router as rag_router
 from app.presentation.api.json_compare.json_compare_router import router as json_compare_router
 from app.presentation.api.result_editor.result_editor_router import router as result_editor_router
+from app.presentation.api.gnb.gnb_router import router as gnb_router
 from app.application.ari.ari_service import ari_service
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
@@ -649,6 +650,9 @@ router.include_router(json_compare_router)
 
 # Include Result Editor router
 router.include_router(result_editor_router)
+
+# Include GNB Menu router
+router.include_router(gnb_router)
 
 
 # === Daily Crawling Endpoints ===

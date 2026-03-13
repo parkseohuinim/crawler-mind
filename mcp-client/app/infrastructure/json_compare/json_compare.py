@@ -4,9 +4,11 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List, Set
 from datetime import datetime
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import os
 import html
 import re
+import unicodedata
 
 # PDF 관련 라이브러리는 선택적으로 import
 try:
@@ -66,23 +68,60 @@ class URLBasedComparator:
             logger.error(error_msg)
             raise Exception(error_msg)
     
-    def create_object_key(self, obj: Dict[str, Any]) -> str:
-        """객체의 유니크 키를 생성합니다 (url + hierarchy 조합)."""
+    def _normalize_url(self, url: str) -> str:
+        """객체 키 생성용 URL 정규화. trailing slash 제거, 스킴 통일, 쿼리 정렬."""
+        if not url or not isinstance(url, str):
+            return ''
+        url = url.strip()
+        if not url.startswith(('http://', 'https://')):
+            return url
+        try:
+            parsed = urlparse(url)
+            path = parsed.path.rstrip('/') or '/'
+            if parsed.query:
+                params = parse_qs(parsed.query, keep_blank_values=True)
+                sorted_query = urlencode(sorted(params.items()), doseq=True)
+            else:
+                sorted_query = ''
+            scheme = 'https' if parsed.scheme in ('http', 'https') else parsed.scheme
+            normalized = urlunparse(
+                (scheme, parsed.netloc.lower(), path, parsed.params, sorted_query, '')
+            )
+            return unicodedata.normalize('NFC', normalized)
+        except Exception:
+            return url
+
+    def _normalize_hierarchy_for_key(self, hierarchy: Any) -> str:
+        """객체 키 생성용 hierarchy 정규화. 공백/유니코드 정규화, list/dict 통일."""
+        if not hierarchy:
+            return ''
+        normalized = self.normalize_for_comparison(hierarchy)
+        if isinstance(normalized, list):
+            return json.dumps(normalized, sort_keys=False, ensure_ascii=False)
+        elif isinstance(normalized, dict):
+            return json.dumps(normalized, sort_keys=True, ensure_ascii=False)
+        return str(normalized)
+
+    def create_object_key(self, obj: Dict[str, Any], use_docid: bool = True) -> str:
+        """객체의 유니크 키를 생성합니다.
+        
+        use_docid=True일 때: docId가 있으면 docId를 우선 사용 (url/hierarchy 변경 시에도 동일 문서로 인식)
+        use_docid=False 또는 docId 없음: url + hierarchy 조합 사용 (정규화 적용으로 가짜 삭제 방지)
+        """
         if not isinstance(obj, dict):
             return str(hash(str(obj)))
         
-        url = obj.get('url', '')
+        # docId 보조 식별자: 있으면 우선 사용 (삭제/신규 중복 방지)
+        if use_docid:
+            doc_id = obj.get('docId', '')
+            if doc_id and isinstance(doc_id, str) and str(doc_id).strip():
+                return f"docId:{str(doc_id).strip()}"
+        
+        url = self._normalize_url(obj.get('url', ''))
         hierarchy = obj.get('hierarchy', [])
+        hierarchy_str = self._normalize_hierarchy_for_key(hierarchy)
         
-        # hierarchy를 정렬된 문자열로 변환 (리스트 또는 딕셔너리 모두 지원)
-        if isinstance(hierarchy, list):
-            hierarchy_str = json.dumps(hierarchy, sort_keys=True) if hierarchy else ''
-        elif isinstance(hierarchy, dict):
-            hierarchy_str = json.dumps(hierarchy, sort_keys=True) if hierarchy else ''
-        else:
-            hierarchy_str = str(hierarchy) if hierarchy else ''
-        
-        return f"{url}|{hierarchy_str}"
+        return f"url:{url}|{hierarchy_str}"
     
     def clean_metadata_for_comparison(self, metadata: Any) -> Any:
         """비교용으로 metadata를 정리합니다 (changes 필드만 제거)."""
@@ -150,7 +189,7 @@ class URLBasedComparator:
             logger.debug(f"new_metadata type: {type(new_metadata)}")
             return old_metadata == new_metadata
     
-    def create_object_mapping(self, data: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    def create_object_mapping(self, data: List[Dict[str, Any]], use_docid: bool = True) -> Dict[str, Dict[str, Any]]:
         """객체 키를 기반으로 매핑을 생성합니다."""
         import logging
         logger = logging.getLogger(__name__)
@@ -158,7 +197,7 @@ class URLBasedComparator:
         mapping = {}
         for item in data:
             if isinstance(item, dict):
-                key = self.create_object_key(item)
+                key = self.create_object_key(item, use_docid=use_docid)
                 if key in mapping:
                     logger.warning(f"중복 키 발견: {key[:100]}...")
                 mapping[key] = item
@@ -402,10 +441,25 @@ class URLBasedComparator:
         
         return changes
     
-    def compare_json(self, file1: str, file2: str, file1_name: str = None, file2_name: str = None) -> Dict[str, Any]:
-        """두 JSON 파일을 URL 기반으로 비교합니다."""
+    def compare_json(
+        self,
+        file1: str,
+        file2: str,
+        file1_name: str = None,
+        file2_name: str = None,
+        use_docid: bool = True,
+    ) -> Dict[str, Any]:
+        """두 JSON 파일을 URL 기반으로 비교합니다.
+        
+        use_docid=True: docId가 있으면 우선 사용 (url/hierarchy 변경 시 삭제+신규 중복 방지)
+        use_docid=False: 기존 방식 (url + hierarchy만 사용)
+        """
         import logging
         logger = logging.getLogger(__name__)
+        
+        # 이전 비교 결과 초기화
+        self.changes = {'modified': [], 'added': [], 'removed': [], 'unchanged': 0}
+        self.javascript_stats = {'pages_with_javascript': [], 'page_count': 0}
         
         logger.info("JSON 파일 로딩 중...")
         data1 = self.load_json(file1)
@@ -420,13 +474,13 @@ class URLBasedComparator:
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        logger.info(f"객체 키 기반 매핑 생성 중...")
+        logger.info(f"객체 키 기반 매핑 생성 중... (use_docid={use_docid})")
         logger.info(f"   - 이전 파일: {len(data1):,}개 객체")
         logger.info(f"   - 현재 파일: {len(data2):,}개 객체")
         
-        # 객체 키 기반 매핑 생성 (url + hierarchy)
-        old_mapping = self.create_object_mapping(data1)
-        new_mapping = self.create_object_mapping(data2)
+        # 객체 키 기반 매핑 생성 (docId 우선 또는 url + hierarchy)
+        old_mapping = self.create_object_mapping(data1, use_docid=use_docid)
+        new_mapping = self.create_object_mapping(data2, use_docid=use_docid)
         
         logger.info(f"   - 이전 파일 유효 객체: {len(old_mapping):,}개")
         logger.info(f"   - 현재 파일 유효 객체: {len(new_mapping):,}개")
@@ -438,6 +492,37 @@ class URLBasedComparator:
         
         # 삭제된 객체들
         removed_keys = old_keys - new_keys
+        added_keys = new_keys - old_keys
+        
+        # 삭제/신규 중 동일 title 제외 (양쪽에서 제거 - 가짜 삭제+신규 방지)
+        if removed_keys and added_keys:
+            removed_by_title: Dict[str, Set[str]] = {}
+            for k in removed_keys:
+                obj = old_mapping[k]
+                t = self.normalize_for_comparison(obj.get('title', '') or '')
+                if t not in removed_by_title:
+                    removed_by_title[t] = set()
+                removed_by_title[t].add(k)
+            added_by_title: Dict[str, Set[str]] = {}
+            for k in added_keys:
+                obj = new_mapping[k]
+                t = self.normalize_for_comparison(obj.get('title', '') or '')
+                if t not in added_by_title:
+                    added_by_title[t] = set()
+                added_by_title[t].add(k)
+            removed_keys_to_exclude: Set[str] = set()
+            added_keys_to_exclude: Set[str] = set()
+            for title_norm in removed_by_title:
+                if title_norm and title_norm in added_by_title:
+                    removed_keys_to_exclude |= removed_by_title[title_norm]
+                    added_keys_to_exclude |= added_by_title[title_norm]
+            excluded_count = len(removed_keys_to_exclude) + len(added_keys_to_exclude)
+            if excluded_count > 0:
+                removed_keys -= removed_keys_to_exclude
+                added_keys -= added_keys_to_exclude
+                logger.info(f"   - 동일 title 삭제/신규 제외: {excluded_count}건 (removed {len(removed_keys_to_exclude)}, added {len(added_keys_to_exclude)})")
+        
+        # 삭제된 객체들
         for obj_key in removed_keys:
             obj = old_mapping[obj_key]
             self.changes['removed'].append({
@@ -447,7 +532,6 @@ class URLBasedComparator:
             })
         
         # 추가된 객체들
-        added_keys = new_keys - old_keys
         for obj_key in added_keys:
             obj = new_mapping[obj_key]
             self.changes['added'].append({
@@ -1302,6 +1386,7 @@ def main():
     parser.add_argument("file2", help="현재 JSON 파일") 
     parser.add_argument("-o", "--output", help="PDF 리포트를 저장할 파일 (기본값: comparison_report_YYYYMMDD_HHMMSS.pdf)")
     parser.add_argument("-q", "--quiet", action="store_true", help="콘솔 출력 없이 파일만 저장")
+    parser.add_argument("--no-docid", action="store_true", help="docId 보조 식별자 비활성화 (기존 url+hierarchy 방식만 사용)")
     
     args = parser.parse_args()
     
@@ -1321,7 +1406,10 @@ def main():
     
     # 비교 실행
     comparator = URLBasedComparator()
-    summary = comparator.compare_json(args.file1, args.file2)
+    summary = comparator.compare_json(
+        args.file1, args.file2,
+        use_docid=not args.no_docid
+    )
     
     # PDF 리포트 생성
     try:
