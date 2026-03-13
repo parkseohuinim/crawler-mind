@@ -343,8 +343,11 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
                 logger.info(f"✅ Gigagenie News List ({url}): HTTP {status_code} success")
 
         load_more_selector = "button#btn_more"
+        max_load_more_clicks = 100  # 무한 루프 방지
+        load_more_click_count = 0
+        card_selector_for_count = "ul#bloglist li"
         try:
-            while True:
+            while load_more_click_count < max_load_more_clicks:
                 load_more_button = await page.query_selector(load_more_selector)
                 if not load_more_button:
                     logger.info("Load More button not found, assuming all posts loaded")
@@ -355,13 +358,25 @@ async def handle_gigagenie_news_list(url: str, fclient: Any, menu: Optional[str]
                 if not await load_more_button.is_enabled():
                     logger.info("Load More button disabled, loading complete")
                     break
+                # 클릭 전 카드 개수 기록 (새 게시물 로드 여부 확인용)
+                cards_before = await page.query_selector_all(card_selector_for_count)
+                count_before = len(cards_before)
                 try:
                     await load_more_button.click()
                 except PlaywrightTimeoutError:
                     logger.warning("⚠️ Load More button click timeout, assuming loading complete")
                     break
+                load_more_click_count += 1
                 logger.info("Load More button clicked, waiting for additional posts")
                 await page.wait_for_timeout(2000)
+                # 클릭 후 카드 개수 확인 - 증가 없으면 로딩 완료
+                cards_after = await page.query_selector_all(card_selector_for_count)
+                count_after = len(cards_after)
+                if count_after <= count_before:
+                    logger.info(f"Load More: no new posts (before={count_before}, after={count_after}), loading complete")
+                    break
+            if load_more_click_count >= max_load_more_clicks:
+                logger.warning(f"⚠️ Load More reached max clicks ({max_load_more_clicks}), stopping")
         except PlaywrightTimeoutError as timeout_err:
             logger.warning(f"⚠️ Load More button processing timeout: {str(timeout_err)}")
         except Exception as e:
