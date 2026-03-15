@@ -223,6 +223,22 @@ def to_mglobalroaming_url(url: str) -> str:
     return urlunparse((parsed.scheme, mobile_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
+def get_item_code_for_product_detail(url: str) -> str | None:
+    """
+    product.kt.com productDetail URL에서 ItemCode 추출.
+    동일 상품(다른 filter_code 경로) 중복 방지용.
+    """
+    if not url or "product.kt.com" not in url or "productDetail" not in (url or ""):
+        return None
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        item_code = (params.get("ItemCode") or [""])[0]
+        return item_code if item_code else None
+    except Exception:
+        return None
+
+
 def canonicalize_url_for_docid(url: str) -> str:
     """
     docId 매칭용 URL 정규화.

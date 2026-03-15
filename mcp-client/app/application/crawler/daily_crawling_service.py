@@ -26,6 +26,7 @@ from app.application.crawler.page_handlers import (
 )
 from app.application.crawler.page_handlers.utils import (
     canonicalize_url_for_docid,
+    get_item_code_for_product_detail,
     to_mshop_url,
     to_mproduct_url,
 )
@@ -41,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 # 결과 저장 경로
 RESULT_DIR = Path(__file__).parent / "result"
+# temp.json 경로 (프로젝트 루트) - 수동 추가 데이터가 최종 JSON에 병합됨
+TEMP_JSON_PATH = Path(__file__).parent.parent.parent.parent.parent / "temp.json"
 JSON_START_DATE = "1900-01-01"
 JSON_END_DATE = "2999-12-31"
 
@@ -1539,6 +1542,22 @@ class DailyCrawlingService:
                         if c.pc_url and canonicalize_url_for_docid(c.pc_url) == canonical_new:
                             existing = c
                             break
+
+                # 3차: product.kt.com productDetail - ItemCode만 매칭 (다른 중간 경로 중복 방지)
+                # filter_code=143(문자편의), 144(보안/안심) 등 동일 상품이 다른 카테고리로 크롤되면
+                # 기존 row 업데이트, 새 row 생성 방지
+                if not existing and menu_path and pc_url and "product.kt.com" in (pc_url or ""):
+                    item_code = get_item_code_for_product_detail(pc_url)
+                    if item_code:
+                        stmt = select(MenuLink).where(
+                            MenuLink.pc_url.like("%product.kt.com%"),
+                            MenuLink.pc_url.like("%productDetail%"),
+                        )
+                        result = await session.execute(stmt)
+                        for c in result.scalars().all():
+                            if c.pc_url and get_item_code_for_product_detail(c.pc_url) == item_code:
+                                existing = c
+                                break
                 
                 if existing:
                     # 업데이트
@@ -1600,13 +1619,59 @@ class DailyCrawlingService:
     # ----------------------------------------------------------------------------------
     # JSON 파일 출력
     # ----------------------------------------------------------------------------------
+    def _load_temp_json_items(self) -> List[Dict[str, Any]]:
+        """
+        temp.json에서 수동 추가 데이터를 로드합니다.
+        최종 JSON 포맷과 동일한 구조로 정규화하여 반환합니다.
+        """
+        items: List[Dict[str, Any]] = []
+        if not TEMP_JSON_PATH.exists():
+            return items
+        try:
+            with open(TEMP_JSON_PATH, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            if not isinstance(raw, list):
+                return items
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                # text 필드: 개행문자를 JSON 저장 형식에 맞게 이스케이프
+                text = item.get("text", "")
+                if isinstance(text, str):
+                    text = text.replace("\n", "\\n")
+                # 최종 JSON 포맷으로 정규화
+                normalized = {
+                    "docId": item.get("docId", ""),
+                    "url": item.get("url", ""),
+                    "murl": item.get("murl") or item.get("url", ""),
+                    "hierarchy": item.get("hierarchy") or [],
+                    "title": item.get("title", ""),
+                    "text": text,
+                    "startdate": item.get("startdate") or JSON_START_DATE,
+                    "enddate": item.get("enddate") or JSON_END_DATE,
+                    "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+                    "status": item.get("status", "new"),
+                }
+                items.append(normalized)
+            if items:
+                logger.info(f"📎 temp.json 로드: {len(items)}건 추가")
+        except Exception as e:
+            logger.warning(f"⚠️ temp.json 로드 실패: {e}")
+        return items
+
     async def _save_json_output(self, task_id: str) -> Optional[Path]:
         """
         수집된 결과를 JSON 파일로 저장
         
         형식: data_YYYY-MM-DD_HHMMSS.json
+        temp.json이 있으면 해당 내용을 결과에 병합합니다.
         """
         results = self._collected_results.get(task_id, [])
+        
+        # temp.json 내용 병합
+        temp_items = self._load_temp_json_items()
+        if temp_items:
+            results = temp_items + results
         
         if not results:
             logger.warning(f"⚠️ No results to save: {task_id}")
