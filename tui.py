@@ -974,8 +974,9 @@ class CrawlerMindApp(App):
 
                 if isinstance(result, dict):
                     processed = result.get("processed_urls", result.get("processed", 0))
-                    success_count = result.get("success_count", 0)
-                    fail_count = result.get("fail_count", result.get("error_count", 0))
+                    # 백엔드 CrawlingResult: success, failed (success_count, fail_count 아님)
+                    success_count = result.get("success", result.get("success_count", 0))
+                    fail_count = result.get("failed", result.get("fail_count", result.get("error_count", 0)))
 
                     if isinstance(processed, int) and total > 0:
                         pct = min(95, int(processed / total * 100))
@@ -989,7 +990,10 @@ class CrawlerMindApp(App):
                             )
                             last_processed = processed
 
+                    # failed_items: [{url, error, ...}, ...] → errors 형태로 사용
                     errors = result.get("errors", result.get("failed_urls", []))
+                    if not errors and result.get("failed_items"):
+                        errors = result["failed_items"]
                     if isinstance(errors, list):
                         for err in errors[len(error_urls):]:
                             error_urls.append(err)
@@ -1002,9 +1006,10 @@ class CrawlerMindApp(App):
                         log.write("[bold green]━━━ 크롤링 완료 ━━━[/]")
 
                         if isinstance(result, dict):
-                            sc = result.get("success_count", "?")
-                            fc = result.get("fail_count", result.get("error_count", "?"))
-                            fp = result.get("file_path", "")
+                            # 백엔드 CrawlingResult: success, failed, json_file
+                            sc = result.get("success", result.get("success_count", "?"))
+                            fc = result.get("failed", result.get("fail_count", result.get("error_count", "?")))
+                            fp = result.get("json_file", result.get("file_path", ""))
                             log.write(f"  성공: [green]{sc}[/]  실패: [red]{fc}[/]")
                             if fp:
                                 log.write(f"  결과 파일: {fp}")
