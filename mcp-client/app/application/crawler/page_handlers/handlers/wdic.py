@@ -282,11 +282,15 @@ async def handle_product_detail(
                         const columns = document.querySelectorAll('.N-pdt-compare-column');
                         
                         columns.forEach(col => {
-                            const link = col.querySelector('a.btn-reduced');
+                            const links = col.querySelectorAll('a.btn-column');
+                            let link = null;
+                            for (const l of links) {
+                                if ((l.textContent || '').trim() === '자세히 보기') {
+                                    link = l;
+                                    break;
+                                }
+                            }
                             if (!link) return;
-                            
-                            const linkText = (link.textContent || '').trim();
-                            if (linkText !== '자세히 보기') return;
                             
                             const nameEl = col.querySelector('strong.name');
                             if (!nameEl) return;
