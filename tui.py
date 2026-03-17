@@ -971,33 +971,35 @@ class CrawlerMindApp(App):
 
                 task_status = data.get("status", "unknown")
                 result = data.get("result") or {}
+                # 진행 중에는 progress 필드에 실시간 진행 정보 (REST 폴링용)
+                progress = data.get("progress") or {}
 
-                if isinstance(result, dict):
-                    processed = result.get("processed_urls", result.get("processed", 0))
-                    # 백엔드 CrawlingResult: success, failed (success_count, fail_count 아님)
-                    success_count = result.get("success", result.get("success_count", 0))
-                    fail_count = result.get("failed", result.get("fail_count", result.get("error_count", 0)))
+                # 진행 정보: progress 우선, 없으면 result에서 (완료 시)
+                processed = progress.get("current", result.get("processed_urls", result.get("processed", 0)))
+                prog_total = progress.get("total") or total
+                success_count = progress.get("success", result.get("success", result.get("success_count", 0)))
+                fail_count = progress.get("failed", result.get("failed", result.get("fail_count", result.get("error_count", 0))))
 
-                    if isinstance(processed, int) and total > 0:
-                        pct = min(95, int(processed / total * 100))
-                        bar.update(total=100, progress=pct)
+                if isinstance(processed, int) and (prog_total or total) > 0:
+                    denom = prog_total or total
+                    pct = min(95, int(processed / denom * 100))
+                    bar.update(total=100, progress=pct)
 
-                        if processed > last_processed:
-                            delta = processed - last_processed
-                            status.update(
-                                f"크롤링 중... ({processed}/{total}) "
-                                f"성공:{success_count} 실패:{fail_count}"
-                            )
-                            last_processed = processed
+                    if processed > last_processed:
+                        status.update(
+                            f"크롤링 중... ({processed}/{denom}) "
+                            f"성공:{success_count} 실패:{fail_count}"
+                        )
+                        last_processed = processed
 
-                    # failed_items: [{url, error, ...}, ...] → errors 형태로 사용
-                    errors = result.get("errors", result.get("failed_urls", []))
-                    if not errors and result.get("failed_items"):
-                        errors = result["failed_items"]
-                    if isinstance(errors, list):
-                        for err in errors[len(error_urls):]:
-                            error_urls.append(err)
-                            self._log_crawl_error(log, err)
+                # failed_items: [{url, error, ...}, ...] → errors 형태로 사용
+                errors = result.get("errors", result.get("failed_urls", []))
+                if not errors and result.get("failed_items"):
+                    errors = result["failed_items"]
+                if isinstance(errors, list):
+                    for err in errors[len(error_urls):]:
+                        error_urls.append(err)
+                        self._log_crawl_error(log, err)
 
                 if task_status in ("completed", "failed", "error"):
                     if task_status == "completed":

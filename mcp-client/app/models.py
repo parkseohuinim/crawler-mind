@@ -79,6 +79,7 @@ class TaskResult(BaseModel):
     error: Optional[str] = Field(None, description="Error message if failed")
     createdAt: str = Field(..., description="Task creation timestamp")
     completedAt: Optional[str] = Field(None, description="Task completion timestamp")
+    progress: Optional[Dict[str, Any]] = Field(None, description="진행 상황 (current, total, success, failed) - 폴링 시 실시간 반영")
 
 # ARI API Models
 class StructuredTableRow(BaseModel):

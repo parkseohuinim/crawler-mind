@@ -267,6 +267,15 @@ class DailyCrawlingService:
                 "mode": mode,
                 "concurrency": concurrency
             })
+            # 초기 progress 설정 (폴링 시 0/N 표시용, extra_items는 핸들러 추가 문서 시 증가)
+            await self._send_update(task_id, "progress", {
+                "current": 0,
+                "total": len(urls),
+                "success": 0,
+                "failed": 0,
+                "extra_items": 0,
+                "message": f"크롤링 준비 중..."
+            })
             
             # 2. 모드에 따라 크롤링 실행 (DB 업데이트 없이 결과만 수집)
             if mode == "parallel":
@@ -370,16 +379,19 @@ class DailyCrawlingService:
         results = []
         success_count = 0
         failed_count = 0
+        extra_items = 0  # 핸들러가 추가한 문서(datas) 수 누적
         
         for idx, input_url in enumerate(urls, start=1):
             try:
+                total_with_extra = len(urls) + extra_items
                 await self._send_update(task_id, "progress", {
-                    "current": idx,
-                    "total": len(urls),
+                    "current": idx + extra_items,
+                    "total": total_with_extra,
                     "success": success_count,
                     "failed": failed_count,
+                    "extra_items": extra_items,
                     "url": input_url.pc_url,
-                    "message": f"크롤링 중: {idx}/{len(urls)}"
+                    "message": f"크롤링 중: {idx + extra_items}/{total_with_extra}"
                 })
                 
                 # 크롤링 실행
@@ -387,6 +399,16 @@ class DailyCrawlingService:
                 
                 if crawl_result.get("success"):
                     success_count += 1
+                    # 핸들러가 추가한 문서 수 반영 (1 input → N datas 시 N-1 추가)
+                    if crawl_result.get("is_multi_result") and crawl_result.get("datas"):
+                        added = max(0, len(crawl_result["datas"]) - 1)
+                        extra_items += added
+                        if added > 0:
+                            logger.info(f"✅ [{idx}/{len(urls)}] Success: {input_url.pc_url} (+{added} docs)")
+                        else:
+                            logger.info(f"✅ [{idx}/{len(urls)}] Success: {input_url.pc_url}")
+                    else:
+                        logger.info(f"✅ [{idx}/{len(urls)}] Success: {input_url.pc_url}")
                     # 전처리 실행
                     processed_result = self._preprocess_result(crawl_result, input_url)
                     results.append({
@@ -395,7 +417,6 @@ class DailyCrawlingService:
                         "processed_result": processed_result,
                         "failed_targets": crawl_result.get("failed_targets", []),
                     })
-                    logger.info(f"✅ [{idx}/{len(urls)}] Success: {input_url.pc_url}")
                 else:
                     failed_count += 1
                     results.append({
@@ -408,13 +429,15 @@ class DailyCrawlingService:
                     logger.warning(f"❌ [{idx}/{len(urls)}] Failed: {input_url.pc_url}")
                 
                 # 개별 작업 후 진행 상황 업데이트 (count 반영)
+                total_with_extra = len(urls) + extra_items
                 await self._send_update(task_id, "progress", {
-                    "current": idx,
-                    "total": len(urls),
+                    "current": idx + extra_items,
+                    "total": total_with_extra,
                     "success": success_count,
                     "failed": failed_count,
+                    "extra_items": extra_items,
                     "url": input_url.pc_url,
-                    "message": f"크롤링 완료: {idx}/{len(urls)}"
+                    "message": f"크롤링 완료: {idx + extra_items}/{total_with_extra}"
                 })
                     
             except Exception as exc:
@@ -446,11 +469,12 @@ class DailyCrawlingService:
         processed_count = 0
         success_count = 0
         failed_count = 0
-        total = len(urls)
+        extra_items = 0  # 핸들러가 추가한 문서(datas) 수 누적
+        base_total = len(urls)
         lock = asyncio.Lock()
         
         async def crawl_with_semaphore(idx: int, input_url: InputUrl) -> Dict[str, Any]:
-            nonlocal processed_count, success_count, failed_count
+            nonlocal processed_count, success_count, failed_count, extra_items
             
             async with semaphore:
                 try:
@@ -459,15 +483,17 @@ class DailyCrawlingService:
                     
                     async with lock:
                         processed_count += 1
-                        current = processed_count
-                        
                         if crawl_result.get("success"):
                             success_count += 1
+                            # 핸들러가 추가한 문서 수 (1 input → N datas 시 N-1)
+                            if crawl_result.get("is_multi_result") and crawl_result.get("datas"):
+                                extra_items += max(0, len(crawl_result["datas"]) - 1)
                             is_success = True
                         else:
                             failed_count += 1
                             is_success = False
-                        
+                        current = processed_count + extra_items
+                        total = base_total + extra_items
                         curr_success = success_count
                         curr_failed = failed_count
                     
@@ -480,7 +506,8 @@ class DailyCrawlingService:
                             "processed_result": processed_result,
                             "failed_targets": crawl_result.get("failed_targets", []),
                         }
-                        logger.info(f"✅ [{current}/{total}] Success: {input_url.pc_url}")
+                        added = max(0, len(crawl_result["datas"]) - 1) if crawl_result.get("is_multi_result") and crawl_result.get("datas") else 0
+                        logger.info(f"✅ [{processed_count}/{base_total}] Success: {input_url.pc_url}" + (f" (+{added} docs)" if added else ""))
                     else:
                         result = {
                             "success": False,
@@ -489,7 +516,7 @@ class DailyCrawlingService:
                             "handler_name": crawl_result.get("handler_name"),
                             "timeout_seconds": crawl_result.get("timeout_seconds"),
                         }
-                        logger.warning(f"❌ [{current}/{total}] Failed: {input_url.pc_url}")
+                        logger.warning(f"❌ [{processed_count}/{base_total}] Failed: {input_url.pc_url}")
                     
                     # 진행 상황 업데이트
                     await self._send_update(task_id, "progress", {
@@ -497,6 +524,7 @@ class DailyCrawlingService:
                         "total": total,
                         "success": curr_success,
                         "failed": curr_failed,
+                        "extra_items": extra_items,
                         "url": input_url.pc_url,
                         "message": f"크롤링 완료: {current}/{total} (병렬 처리 중)"
                     })
@@ -506,8 +534,9 @@ class DailyCrawlingService:
                 except Exception as exc:
                     async with lock:
                         processed_count += 1
-                        current = processed_count
                         failed_count += 1
+                        current = processed_count + extra_items
+                        total = base_total + extra_items
                         curr_success = success_count
                         curr_failed = failed_count
                     
@@ -516,13 +545,14 @@ class DailyCrawlingService:
                     if handler_info:
                         _, handler_func = handler_info
                         handler_name = handler_func.__name__
-                    logger.error(f"❌ [{current}/{total}] Error: {input_url.pc_url} - {exc}")
+                    logger.error(f"❌ [{processed_count}/{base_total}] Error: {input_url.pc_url} - {exc}")
                     
                     await self._send_update(task_id, "progress", {
                         "current": current,
                         "total": total,
                         "success": curr_success,
                         "failed": curr_failed,
+                        "extra_items": extra_items,
                         "url": input_url.pc_url,
                         "message": f"크롤링 완료: {current}/{total} (병렬 처리 중)"
                     })
@@ -2060,12 +2090,15 @@ class DailyCrawlingService:
         
         실시간 진행 상황을 클라이언트에 전달하기 위해 사용합니다.
         태스크별 큐에 JSON 메시지를 추가하면, 클라이언트가 이를 수신합니다.
+        progress 타입 시 task.progress에도 저장하여 REST 폴링에서 조회 가능하게 합니다.
         
         Args:
             task_id: 태스크 고유 ID
             update_type: 업데이트 유형 (예: "progress", "complete", "error")
             data: 전송할 데이터 딕셔너리
         """
+        if update_type == "progress" and task_id in self.tasks:
+            self.tasks[task_id].progress = data
         if task_id in self.task_streams:
             message = json.dumps({"type": update_type, "data": data})
             await self.task_streams[task_id].put(message)
