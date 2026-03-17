@@ -42,8 +42,8 @@ logger = logging.getLogger(__name__)
 
 # 결과 저장 경로
 RESULT_DIR = Path(__file__).parent / "result"
-# temp.json 경로 (프로젝트 루트) - 수동 추가 데이터가 최종 JSON에 병합됨
-TEMP_JSON_PATH = Path(__file__).parent.parent.parent.parent.parent / "temp.json"
+# temp.json 경로 (crawler 폴더) - 수동 추가 데이터가 최종 JSON에 병합됨
+TEMP_JSON_PATH = Path(__file__).parent / "temp.json"
 JSON_START_DATE = "1900-01-01"
 JSON_END_DATE = "2999-12-31"
 
