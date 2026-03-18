@@ -41,7 +41,10 @@ EXCLUDE_URL_PATTERNS = [
     r"inside\.kt\.com/html/notice/",      # 공지사항
     r"inside\.kt\.com/html/safety/",      # 안전 공지
     r"event\.kt\.com",                    # 이벤트
-    r"globalroaming\.kt\.com"            # 로밍 상품 (상품별 페이지 구조가 유사)
+    r"globalroaming\.kt\.com",            # 로밍 상품 (상품별 페이지 구조가 유사)
+    r"product\.kt\.com/wDic/productDetail\.do",  # 부가서비스 상세 (생활편의/금융결제 등 여러 메뉴에서 동일 상품 링크 → hierarchy만 다름)
+    r"shop\.kt\.com",                     # KT Shop (모바일/태블릿 등 동일 상품 여러 경로에서 수집)
+    r"product\.kt\.com/wDic",   
 ]
 
 

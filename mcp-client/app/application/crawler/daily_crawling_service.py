@@ -1168,9 +1168,13 @@ class DailyCrawlingService:
                 if "datas" in handler_result and handler_result.get("datas"):
                     datas = handler_result["datas"]
                     menus = handler_result.get("menus", [])
+                    # empty_text 재시도: 해당 menu와 일치하는 1건만 추가 (목록 핸들러 중복 방지)
+                    target_menu = ft.get("menu", "").strip() if ft.get("reason") == "empty_text" else None
                     for di, data in enumerate(datas):
                         menu_info = menus[di] if di < len(menus) else {}
                         menu_str = menu_info.get("menu", "")
+                        if target_menu and menu_str.strip() != target_menu:
+                            continue
                         hierarchy = [s.strip() for s in menu_str.split("^") if s.strip()] if menu_str else list(base_hierarchy)
                         data_url = menu_info.get("url") or data.get("url") or url
                         single_result = {
@@ -1194,6 +1198,10 @@ class DailyCrawlingService:
                         )
                         if processed.get("processed_datas"):
                             single_result["processed_text"] = processed["processed_datas"][0].get("processed_text", "")
+                        # 재시도 후에도 빈 text면 추가하지 않음
+                        if not (single_result.get("processed_text") or "").strip():
+                            logger.warning(f"⚠️ 빈 text 재시도 후에도 비어있음: menu={target_menu or menu_str[:50]}...")
+                            continue
                         document_id = None
                         if update_menu_links:
                             document_id = await self._update_menu_links(single_result, retry_input)
@@ -1424,6 +1432,17 @@ class DailyCrawlingService:
                             # recommendations 필드 포함 (있는 경우)
                             if "recommendations" in data:
                                 single_result["recommendations"] = data["recommendations"]
+                            
+                            # 빈 text 감지: processed_text가 비어있으면 재시도 큐에 적재 (목록 스냅샷 등)
+                            if not (single_result.get("processed_text") or "").strip():
+                                self._failed_targets_queue[task_id].append({
+                                    "url": data_url,
+                                    "menu": menu_str,
+                                    "base_hierarchy": data_hierarchy,
+                                    "reason": "empty_text",
+                                })
+                                logger.warning(f"⚠️ 빈 text 감지 → 재시도 큐 적재: menu={menu_str[:50]}... url={data_url[:60]}...")
+                                continue
                             
                             # menu_links 업데이트 (docId 획득)
                             document_id = None
