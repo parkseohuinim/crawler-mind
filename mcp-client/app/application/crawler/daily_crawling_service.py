@@ -1733,7 +1733,14 @@ class DailyCrawlingService:
         if exact_removed > 0:
             logger.info(f"📊 URL+docId 중복 제거: {exact_removed}건 제거 ({before_exact} → {len(results)})")
         
-        # ----- 2단계: TF-IDF 유사도 분석 -----
+        # ----- 2단계: docId 기반 중복 제거 (동일 상품·다른 경로 → 1건만 유지) -----
+        before_docid = len(results)
+        results = self._remove_docid_duplicates(results)
+        docid_removed = before_docid - len(results)
+        if docid_removed > 0:
+            logger.info(f"📊 docId 중복 제거: {docid_removed}건 제거 ({before_docid} → {len(results)})")
+        
+        # ----- 3단계: TF-IDF 유사도 분석 -----
         await self._send_update(
             task_id,
             "status",
@@ -2101,6 +2108,61 @@ class DailyCrawlingService:
             del results[idx]
         
         logger.info(f"[_remove_exact_duplicates] Removed {len(indices_to_remove)} exact duplicates")
+        return results
+    
+    def _remove_docid_duplicates(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        동일한 docId를 가진 항목 중 하나만 남기고 제거합니다.
+        
+        menu_links 3차 조회(ItemCode 매칭)로 같은 docId가 배정된 경우,
+        동일 상품이 다른 경로·URL로 여러 번 수집되어 JSON에 중복으로 남는 문제를 해결합니다.
+        
+        보존 우선순위:
+            1. hierarchy depth가 더 깊은 것 (하위 메뉴 = 더 구체적)
+            2. depth가 같으면 text 길이가 더 긴 것
+            3. text 길이도 같으면 먼저 등장한 항목
+        """
+        if len(results) < 2:
+            return results
+        
+        # docId별로 그룹화 (docId가 없는 항목은 제외)
+        by_docid: Dict[str, List[int]] = {}
+        for idx, item in enumerate(results):
+            doc_id = item.get("docId", "")
+            if not doc_id:
+                continue
+            by_docid.setdefault(doc_id, []).append(idx)
+        
+        indices_to_remove = set()
+        for doc_id, indices in by_docid.items():
+            if len(indices) < 2:
+                continue
+            # 유지할 인덱스 1개 선택
+            best_idx = indices[0]
+            for idx in indices[1:]:
+                item_a = results[best_idx]
+                item_b = results[idx]
+                depth_a = len(item_a.get("hierarchy", []))
+                depth_b = len(item_b.get("hierarchy", []))
+                len_a = len(item_a.get("text", ""))
+                len_b = len(item_b.get("text", ""))
+                
+                if depth_b > depth_a:
+                    indices_to_remove.add(best_idx)
+                    best_idx = idx
+                elif depth_b == depth_a and len_b > len_a:
+                    indices_to_remove.add(best_idx)
+                    best_idx = idx
+                else:
+                    indices_to_remove.add(idx)
+        
+        if not indices_to_remove:
+            return results
+        
+        for idx in sorted(indices_to_remove, reverse=True):
+            del results[idx]
+        
+        logger.info(f"[_remove_docid_duplicates] Removed {len(indices_to_remove)} docId duplicates")
         return results
     
     async def _send_update(self, task_id: str, update_type: str, data: Dict[str, Any]) -> None:
